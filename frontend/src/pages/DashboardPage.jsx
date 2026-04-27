@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { useOutletContext } from 'react-router-dom';
+import { useOutletContext, Link } from 'react-router-dom';
 import { getSummary, getMonthly } from '../api';
 import { Line } from 'react-chartjs-2';
 import { Printer } from 'lucide-react';
@@ -49,19 +49,19 @@ export default function DashboardPage() {
 
       <div className="massive-grid fade-in">
         {/* Row 1 */}
-        <div className="report-card">
+        <Link to="/sales" className="report-card">
           <div className="report-header"><h3>Sales Trend</h3></div>
           <div style={{ height: 160 }}>
             <Line data={{ labels: monthly.map(m=>m.month), datasets: [{ data: monthly.map(m=>m.sales), borderColor: '#3b82f6', backgroundColor: 'rgba(59,130,246,0.1)', fill: true, borderWidth: 2 }]}} options={lineOpts('#3b82f6')} />
           </div>
-        </div>
+        </Link>
 
-        <div className="report-card">
+        <Link to="/purchases" className="report-card">
           <div className="report-header"><h3>Purchase Trend</h3></div>
           <div style={{ height: 160 }}>
             <Line data={{ labels: monthly.map(m=>m.month), datasets: [{ data: monthly.map(m=>m.purchases), borderColor: '#f43f5e', backgroundColor: 'rgba(244,63,94,0.1)', fill: true, borderWidth: 2 }]}} options={lineOpts('#f43f5e')} />
           </div>
-        </div>
+        </Link>
 
         <div className="report-card">
           <div className="report-header"><h3>Cash In/Out Flow</h3></div>
@@ -71,13 +71,13 @@ export default function DashboardPage() {
         </div>
 
         {/* Row 2 */}
-        <div className="report-card">
+        <Link to="/financials" className="report-card">
           <div className="report-header"><h3>Trading Details</h3></div>
           <div className="report-row"><span className="label">Gross Profit</span><span className="value positive">{fmtAmt(summary.trading.gross_profit)} Cr</span></div>
           <div className="report-row"><span className="label">Nett Profit</span><span className="value positive">{fmtAmt(summary.trading.net_profit)} Cr</span></div>
           <div className="report-row"><span className="label">Sales Accounts</span><span className="value">{fmtAmt(summary.trading.sales)} Cr</span></div>
           <div className="report-row"><span className="label">Purchase Accounts</span><span className="value">{fmtAmt(summary.trading.purchases)} Dr</span></div>
-        </div>
+        </Link>
 
         <div className="report-card">
           <div className="report-header"><h3>Assets/Liabilities</h3></div>
@@ -85,19 +85,19 @@ export default function DashboardPage() {
           <div className="report-row"><span className="label">Current Liabilities</span><span className="value">{fmtAmt(summary.assets_liabilities.liabilities)} Cr</span></div>
         </div>
 
-        <div className="report-card">
+        <Link to="/outstanding" className="report-card">
           <div className="report-header"><h3>Receivables/Payables</h3></div>
           <div className="report-row"><span className="label">Receivables</span><span className="value positive">{fmtAmt(summary.receivables)} Dr</span></div>
           <div className="report-row"><span className="label">Payables</span><span className="value negative">{fmtAmt(summary.payables)} Cr</span></div>
-        </div>
+        </Link>
 
         {/* Row 3 */}
-        <div className="report-card">
+        <Link to="/stock" className="report-card">
           <div className="report-header"><h3>Inventory Details</h3></div>
           <div className="report-row"><span className="label">Closing Stock ({fmtNum(summary.inventory.quantity)} NOS)</span><span className="value">{fmtAmt(summary.inventory.value)}</span></div>
           <div className="report-row"><span className="label">Outwards</span><span className="value">{fmtAmt(summary.inventory.outwards)}</span></div>
           <div className="report-row"><span className="label">Inwards</span><span className="value">{fmtAmt(summary.inventory.inwards)}</span></div>
-        </div>
+        </Link>
 
         <div className="report-card">
           <div className="report-header"><h3>Accounting Ratios</h3></div>
@@ -146,11 +146,11 @@ export default function DashboardPage() {
           <div className="report-row"><span className="label">Unreconciled Transactions</span><span className="value">Count: {summary.gst.recon_gstr2b.unreconciled}</span></div>
         </div>
 
-        <div className="report-card">
+        <Link to="/gst" className="report-card">
           <div className="report-header"><h3>GST Liability/ITC (3B)</h3></div>
           <div className="report-row"><span className="label">Tax Liability</span><span className="value negative">{fmtAmt(summary.gst.liability_itc.tax_liability)}</span></div>
           <div className="report-row"><span className="label">ITC</span><span className="value positive">{fmtAmt(summary.gst.liability_itc.itc)}</span></div>
-        </div>
+        </Link>
 
         {/* Row 5 - Banking */}
         <div className="report-card">

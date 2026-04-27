@@ -79,7 +79,6 @@ export default function AppLayout() {
               <span>to</span>
               <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
             </div>
-            <div className="company-badge">Live Tally</div>
           </div>
         </header>
         <div className="page-content-wrap" style={{ flex: 1, overflow: 'auto' }}>

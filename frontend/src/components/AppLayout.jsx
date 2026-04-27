@@ -6,10 +6,16 @@ import { LayoutDashboard, TrendingUp, ShoppingCart, Package, Wallet, BookOpen, S
 
 export default function AppLayout() {
   const { user, logout } = useAuth();
-  const [companyName, setCompanyName] = useState(localStorage.getItem('tally_company') || 'Tally ERP Dashboard');
-  const [companies, setCompanies] = useState([]);
-  const [isChanging, setIsChanging] = useState(false);
   
+  const [companyName, setCompanyName] = useState('Loading...');
+  
+  useEffect(() => {
+    getCompanies().then(res => {
+      const cos = res.data?.companies || [];
+      if (cos.length > 0) setCompanyName(cos[0].name);
+    }).catch(() => setCompanyName('Tally ERP'));
+  }, []);
+
   // Global Filter States
   const [searchTerm, setSearchTerm] = useState('');
   const [fromDate, setFromDate] = useState('2023-04-01');
@@ -17,56 +23,15 @@ export default function AppLayout() {
 
   const initials = (user?.full_name || user?.username || 'U').slice(0, 2).toUpperCase();
 
-  useEffect(() => {
-    getCompanies().then(res => {
-      const cos = res.data?.companies?.map(c => c.name) || [];
-      setCompanies(cos);
-      if (cos.length > 0 && !localStorage.getItem('tally_company')) {
-        setCompanyName(cos[0]);
-        localStorage.setItem('tally_company', cos[0]);
-      }
-    }).catch(err => console.error("Failed to load companies", err));
-  }, []);
-
-  const handleCompanyChange = (e) => {
-    const newCo = e.target.value;
-    setCompanyName(newCo);
-    localStorage.setItem('tally_company', newCo);
-    setIsChanging(false);
-    window.location.reload();
-  };
 
   return (
     <div className="app-layout">
       <aside className="sidebar">
         <div className="sidebar-brand">
           <div className="brand-icon"><BarChart3 size={20} /></div>
-          <div style={{ flex: 1, minWidth: 0 }}>
+          <div>
             <h1>ADVENT TREPORTS</h1>
-            {isChanging && companies.length > 1 ? (
-              <select 
-                value={companyName} 
-                onChange={handleCompanyChange}
-                onBlur={() => setIsChanging(false)}
-                autoFocus
-                style={{
-                  width: '100%', background: 'rgba(15, 23, 42, 0.8)', color: 'white',
-                  border: '1px solid var(--border)', borderRadius: '4px', fontSize: '11px', padding: '2px'
-                }}
-              >
-                {companies.map(c => <option key={c} value={c}>{c}</option>)}
-              </select>
-            ) : (
-              <div 
-                onClick={() => companies.length > 1 && setIsChanging(true)}
-                style={{ cursor: companies.length > 1 ? 'pointer' : 'default', display: 'flex', alignItems: 'center', gap: '4px' }}
-              >
-                <span title={companyName} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '140px', fontSize: '11px', color: 'var(--text-muted)' }}>
-                  {companyName}
-                </span>
-                {companies.length > 1 && <span style={{ fontSize: '10px' }}>▼</span>}
-              </div>
-            )}
+            <span style={{ color: 'var(--accent-light)', fontWeight: 700, fontSize: '12px' }}>{companyName}</span>
           </div>
         </div>
         <nav className="sidebar-nav">

@@ -50,23 +50,37 @@ body {
 
 /* === SIDEBAR === */
 .sidebar {
-  width: var(--sidebar-width); background: var(--bg-secondary);
-  border-right: 1px solid var(--border); display: flex; flex-direction: column;
-  padding: 0; position: relative; z-index: 10;
+  width: var(--sidebar-width);
+  height: 100vh;
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  overflow-y: auto; /* Enable scrolling for long nav lists */
+  scrollbar-width: none; /* Hide scrollbar for Firefox */
 }
+.sidebar::-webkit-scrollbar { display: none; } /* Hide scrollbar for Chrome/Safari */
+
 .sidebar-brand {
-  padding: 24px 20px; border-bottom: 1px solid var(--border);
-  display: flex; align-items: center; gap: 12px;
+  padding: 32px 24px 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  border-bottom: 1px solid var(--border);
 }
-.sidebar-brand .brand-icon {
-  width: 40px; height: 40px; border-radius: 12px;
-  background: linear-gradient(135deg, var(--accent), var(--cyan));
-  display: flex; align-items: center; justify-content: center;
-  font-weight: 800; font-size: 18px; color: white;
+.sidebar-brand h1 { font-size: 16px; font-weight: 800; letter-spacing: 1px; color: white; margin: 0; }
+
+
+.sidebar-nav { 
+  flex: 1; padding: 20px 12px; 
+  overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.1) transparent; 
 }
-.sidebar-brand h1 { font-size: 16px; font-weight: 700; letter-spacing: 0.5px; }
-.sidebar-brand span { font-size: 11px; color: var(--text-muted); display: block; margin-top: 2px; }
-.sidebar-nav { flex: 1; padding: 16px 12px; display: flex; flex-direction: column; gap: 4px; }
+.sidebar-nav::-webkit-scrollbar { width: 4px; }
+.sidebar-nav::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 10px; }
 .sidebar-nav a {
   display: flex; align-items: center; gap: 12px; padding: 11px 16px;
   border-radius: var(--radius-sm); color: var(--text-secondary);
@@ -168,21 +182,48 @@ body {
   gap: 12px;
 }
 
-.print-btn {
+/* === BUTTONS === */
+.btn-primary, .btn-secondary, .print-btn {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
-  padding: 10px 18px;
+  padding: 10px 20px;
   border-radius: 12px;
-  background: var(--bg-card);
-  color: var(--accent-light);
-  border: 1px solid rgba(99, 102, 241, 0.3);
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
-  transition: all 0.2s;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 1px solid transparent;
 }
-.print-btn:hover { background: var(--bg-card-hover); border-color: var(--accent); transform: translateY(-1px); }
+
+.btn-primary {
+  background: var(--accent);
+  color: white;
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+}
+.btn-primary:hover {
+  background: var(--accent-light);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(99, 102, 241, 0.4);
+}
+
+.btn-secondary, .print-btn {
+  background: rgba(30, 41, 59, 0.5);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  backdrop-filter: blur(8px);
+}
+.btn-secondary:hover, .print-btn:hover {
+  background: rgba(30, 41, 59, 0.8);
+  border-color: var(--accent);
+  transform: translateY(-1px);
+}
+
+.print-btn {
+  color: var(--accent-light);
+  border-color: rgba(99, 102, 241, 0.3);
+}
 
 /* === MODALS === */
 .modal-overlay {

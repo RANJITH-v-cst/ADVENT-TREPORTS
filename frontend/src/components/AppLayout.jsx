@@ -1,0 +1,126 @@
+import { useState, useEffect } from 'react';
+import { Outlet, NavLink } from 'react-router-dom';
+import { useAuth } from '../AuthContext';
+import { getCompanies } from '../api';
+import { LayoutDashboard, TrendingUp, ShoppingCart, Package, Wallet, BookOpen, Scale, Shield, LogOut, BarChart3, Receipt, FileText, Search, Calendar } from 'lucide-react';
+
+export default function AppLayout() {
+  const { user, logout } = useAuth();
+  const [companyName, setCompanyName] = useState(localStorage.getItem('tally_company') || 'Tally ERP Dashboard');
+  const [companies, setCompanies] = useState([]);
+  const [isChanging, setIsChanging] = useState(false);
+  
+  // Global Filter States
+  const [searchTerm, setSearchTerm] = useState('');
+  const [fromDate, setFromDate] = useState('2023-04-01');
+  const [toDate, setToDate] = useState('2024-03-31');
+
+  const initials = (user?.full_name || user?.username || 'U').slice(0, 2).toUpperCase();
+
+  useEffect(() => {
+    getCompanies().then(res => {
+      const cos = res.data?.companies?.map(c => c.name) || [];
+      setCompanies(cos);
+      if (cos.length > 0 && !localStorage.getItem('tally_company')) {
+        setCompanyName(cos[0]);
+        localStorage.setItem('tally_company', cos[0]);
+      }
+    }).catch(err => console.error("Failed to load companies", err));
+  }, []);
+
+  const handleCompanyChange = (e) => {
+    const newCo = e.target.value;
+    setCompanyName(newCo);
+    localStorage.setItem('tally_company', newCo);
+    setIsChanging(false);
+    window.location.reload();
+  };
+
+  return (
+    <div className="app-layout">
+      <aside className="sidebar">
+        <div className="sidebar-brand">
+          <div className="brand-icon"><BarChart3 size={20} /></div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <h1>ADVENT TREPORTS</h1>
+            {isChanging && companies.length > 1 ? (
+              <select 
+                value={companyName} 
+                onChange={handleCompanyChange}
+                onBlur={() => setIsChanging(false)}
+                autoFocus
+                style={{
+                  width: '100%', background: 'rgba(15, 23, 42, 0.8)', color: 'white',
+                  border: '1px solid var(--border)', borderRadius: '4px', fontSize: '11px', padding: '2px'
+                }}
+              >
+                {companies.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            ) : (
+              <div 
+                onClick={() => companies.length > 1 && setIsChanging(true)}
+                style={{ cursor: companies.length > 1 ? 'pointer' : 'default', display: 'flex', alignItems: 'center', gap: '4px' }}
+              >
+                <span title={companyName} style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '140px', fontSize: '11px', color: 'var(--text-muted)' }}>
+                  {companyName}
+                </span>
+                {companies.length > 1 && <span style={{ fontSize: '10px' }}>▼</span>}
+              </div>
+            )}
+          </div>
+        </div>
+        <nav className="sidebar-nav">
+          <div className="nav-label">Core Modules</div>
+          <NavLink to="/" end className={({ isActive }) => isActive ? 'active' : ''}><LayoutDashboard size={18} /> Dashboard</NavLink>
+          <NavLink to="/sales" className={({ isActive }) => isActive ? 'active' : ''}><TrendingUp size={18} /> Sales</NavLink>
+          <NavLink to="/purchases" className={({ isActive }) => isActive ? 'active' : ''}><ShoppingCart size={18} /> Purchases</NavLink>
+          <NavLink to="/stock" className={({ isActive }) => isActive ? 'active' : ''}><Package size={18} /> Stock</NavLink>
+          <NavLink to="/outstanding" className={({ isActive }) => isActive ? 'active' : ''}><Wallet size={18} /> Outstanding</NavLink>
+          <NavLink to="/ledgers" className={({ isActive }) => isActive ? 'active' : ''}><BookOpen size={18} /> Ledgers</NavLink>
+          <NavLink to="/financials" className={({ isActive }) => isActive ? 'active' : ''}><Scale size={18} /> Financials</NavLink>
+
+          <div className="nav-label">Taxation</div>
+          <NavLink to="/gst" className={({ isActive }) => isActive ? 'active' : ''}><Receipt size={18} /> GST Report</NavLink>
+          <NavLink to="/tds" className={({ isActive }) => isActive ? 'active' : ''}><FileText size={18} /> TDS Report</NavLink>
+          {user?.role === 'admin' && (
+            <NavLink to="/admin" className={({ isActive }) => isActive ? 'active' : ''}><Shield size={18} /> Admin Panel</NavLink>
+          )}
+        </nav>
+        <div className="sidebar-footer">
+          <div className="user-avatar">{initials}</div>
+          <div className="user-info">
+            <p>{user?.full_name || user?.username}</p>
+            <span>{user?.role}</span>
+          </div>
+          <button className="logout-btn" onClick={logout} title="Logout"><LogOut size={18} /></button>
+        </div>
+      </aside>
+      
+      <main className="main-area">
+        <header className="header">
+          <div className="search-bar">
+            <Search size={18} />
+            <input 
+              type="text" 
+              placeholder="Universal Search..." 
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+          <div className="header-right" style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
+            <div className="date-filters">
+              <Calendar size={16} />
+              <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
+              <span>to</span>
+              <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
+            </div>
+            <div className="company-badge">Live Tally</div>
+          </div>
+        </header>
+        <div className="page-content-wrap" style={{ flex: 1, overflow: 'auto' }}>
+          <Outlet context={{ searchTerm, fromDate, toDate }} />
+        </div>
+      </main>
+    </div>
+  );
+}

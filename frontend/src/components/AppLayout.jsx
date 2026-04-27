@@ -21,8 +21,7 @@ export default function AppLayout() {
   const [fromDate, setFromDate] = useState('2023-04-01');
   const [toDate, setToDate] = useState('2024-03-31');
 
-  const initials = (user?.full_name || user?.username || 'U').slice(0, 2).toUpperCase();
-
+  const initials = (user?.email || 'U').slice(0, 2).toUpperCase();
 
   return (
     <div className="app-layout">
@@ -47,17 +46,19 @@ export default function AppLayout() {
           <div className="nav-label">Taxation</div>
           <NavLink to="/gst" className={({ isActive }) => isActive ? 'active' : ''}><Receipt size={18} /> GST Report</NavLink>
           <NavLink to="/tds" className={({ isActive }) => isActive ? 'active' : ''}><FileText size={18} /> TDS Report</NavLink>
-          {user?.role === 'admin' && (
-            <NavLink to="/admin" className={({ isActive }) => isActive ? 'active' : ''}><Shield size={18} /> Admin Panel</NavLink>
-          )}
         </nav>
         <div className="sidebar-footer">
           <div className="user-avatar">{initials}</div>
-          <div className="user-info">
-            <p>{user?.full_name || user?.username}</p>
-            <span>{user?.role}</span>
+          <div className="user-info" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <p title={user?.email} style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', margin: 0 }}>{user?.email}</p>
+            <div 
+              onClick={logout} 
+              style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#ef4444', cursor: 'pointer', fontSize: '13px', fontWeight: 600 }}
+              title="Click to Logout"
+            >
+              <LogOut size={14} /> Logout
+            </div>
           </div>
-          <button className="logout-btn" onClick={logout} title="Logout"><LogOut size={18} /></button>
         </div>
       </aside>
       

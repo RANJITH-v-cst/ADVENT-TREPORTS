@@ -37,7 +37,6 @@ function AppRoutes() {
         <Route path="financials" element={<FinancialsPage />} />
         <Route path="gst" element={<GSTReportPage />} />
         <Route path="tds" element={<TDSReportPage />} />
-        <Route path="admin" element={<ProtectedRoute adminOnly><AdminPage /></ProtectedRoute>} />
       </Route>
       <Route path="*" element={<Navigate to="/" />} />
     </Routes>

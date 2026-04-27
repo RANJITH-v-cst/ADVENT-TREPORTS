@@ -4,7 +4,7 @@ import { BarChart3 } from 'lucide-react';
 
 export default function LoginPage() {
   const { login } = useAuth();
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -14,9 +14,9 @@ export default function LoginPage() {
     setError('');
     setLoading(true);
     try {
-      await login(username, password);
+      await login(email, password);
     } catch (err) {
-      setError(err.response?.data?.detail || 'Login failed');
+      setError(err.message || 'Login failed');
     } finally {
       setLoading(false);
     }
@@ -33,12 +33,12 @@ export default function LoginPage() {
         {error && <div className="error-msg">{error}</div>}
         <form onSubmit={handleSubmit}>
           <div className="form-group">
-            <label>Username</label>
-            <input id="login-username" type="text" value={username} onChange={e => setUsername(e.target.value)} placeholder="Enter username" autoFocus />
+            <label>Email</label>
+            <input id="login-email" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Enter email" autoFocus required />
           </div>
           <div className="form-group">
             <label>Password</label>
-            <input id="login-password" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Enter password" />
+            <input id="login-password" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="Enter password" required />
           </div>
           <button id="login-submit" className="btn-primary" type="submit" disabled={loading}>
             {loading ? 'Signing in...' : 'Sign In'}

@@ -15,8 +15,8 @@ ADMIN_EMAIL = "ranjithsvhpc1234@gmail.com"
 # --- SMTP Configuration (User needs to set these) ---
 SMTP_SERVER = "smtp.gmail.com"
 SMTP_PORT = 587
-SMTP_USER = os.getenv("SMTP_USER", "ranjithsvhpc1234@gmail.com")
-SMTP_PASS = os.getenv("SMTP_PASS", "mqld iyvy ciec vnxm")
+SMTP_USER = os.getenv("SMTP_USER", "your-email@gmail.com")
+SMTP_PASS = os.getenv("SMTP_PASS", "your-app-password")
 
 def init_db():
     with sqlite3.connect(DB_PATH) as conn:

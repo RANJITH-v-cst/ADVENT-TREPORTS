@@ -1,9 +1,13 @@
 """Tally ERP XML communication client."""
 import re
+import asyncio
+import time
 import httpx
 import xmltodict
 
 TALLY_URL = "http://localhost:9000"
+CACHE = {}
+CACHE_TTL = 10  # 10 seconds cache for expensive reports
 
 
 def clean_xml(text: str) -> str:
@@ -221,9 +225,17 @@ async def get_balance_sheet(company: str = "") -> dict:
 
 async def get_dashboard_summary(company: str = "") -> dict:
     """Aggregate accurate KPIs from ledger groups for the 10 reports."""
-    groups = await get_ledger_groups(company=company)
-    ledgers = await get_ledgers(company=company)
-    stock_items = await get_stock_items(company=company)
+    cache_key = f"summary_{company}"
+    if cache_key in CACHE:
+        ts, val = CACHE[cache_key]
+        if time.time() - ts < CACHE_TTL: return val
+
+    # Parallel Fetch
+    groups_task = get_ledger_groups(company=company)
+    ledgers_task = get_ledgers(company=company)
+    stock_task = get_stock_items(company=company)
+    
+    groups, ledgers, stock_items = await asyncio.gather(groups_task, ledgers_task, stock_task)
 
     metrics = {
         "sales": 0.0, "purchases": 0.0,
@@ -287,7 +299,7 @@ async def get_dashboard_summary(company: str = "") -> dict:
     sorted_ledgers = sorted(ledgers, key=lambda x: abs(x["closing"]), reverse=True)
     top_ledgers = [{"name": l["name"], "group": l["parent"], "amount": abs(l["closing"])} for l in sorted_ledgers[:10] if l["closing"] != 0]
 
-    return {
+    res = {
         "trading": {
             "gross_profit": gross_profit, "net_profit": net_profit,
             "sales": metrics["sales"], "purchases": metrics["purchases"]
@@ -320,6 +332,8 @@ async def get_dashboard_summary(company: str = "") -> dict:
         "top_ledgers": top_ledgers,
         "expense_breakdown": [{"name": k, "value": v} for k, v in expense_breakdown.items()],
     }
+    CACHE[cache_key] = (time.time(), res)
+    return res
 
 
 async def get_monthly_data(company: str = "") -> list:

@@ -6,9 +6,10 @@ from email.mime.multipart import MIMEMultipart
 import os
 from datetime import datetime
 
+from database import DB_PATH
+
 router = APIRouter(prefix="/api/license", tags=["license"])
 
-DB_PATH = "backend/advent_treports.db"
 ADMIN_EMAIL = "ranjithsvhpc1234@gmail.com"
 
 # --- SMTP Configuration (User needs to set these) ---

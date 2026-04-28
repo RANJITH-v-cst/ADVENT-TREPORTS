@@ -2,7 +2,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from database import init_db
-from routes import auth, dashboard, admin, license
+from routes import auth, dashboard, admin, license, business_brain_api, analytics
 
 app = FastAPI(title="ADVENT TREPORTS API", version="1.0.0")
 
@@ -18,7 +18,8 @@ app.include_router(auth.router)
 app.include_router(dashboard.router)
 app.include_router(admin.router)
 app.include_router(license.router)
-
+app.include_router(business_brain_api.router)
+app.include_router(analytics.router)
 
 @app.on_event("startup")
 def startup():

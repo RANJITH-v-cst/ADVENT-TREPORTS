@@ -1,3 +1,4 @@
+from copy import deepcopy
 from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends
@@ -8,227 +9,331 @@ import tally_client
 
 router = APIRouter(prefix="/api/analytics", tags=["Analytics"])
 
-DATASET_CONFIG: Dict[str, Dict[str, Any]] = {
-    "transactions": {
-        "label": "Transactions",
-        "subtypes": ["sales", "purchase"],
-        "fields": ["date", "party_name", "item_name", "quantity", "amount"],
+ANALYTICS_CONFIG: Dict[str, Any] = {
+    "types": {
+        "transactions": {
+            "label": "Transactions",
+            "sub_types": {
+                "sales": {"label": "Sales"},
+                "purchase": {"label": "Purchase"},
+            },
+            "fields": {
+                "basic_info": ["date", "month", "year", "party_name", "item_name", "voucher_type", "voucher_number"],
+                "stock": ["quantity", "unit"],
+                "financial": ["amount"],
+                "details": ["ledgers", "narration"],
+            },
+            "suggested_columns": ["date", "party_name", "amount"],
+            "group_by_candidates": ["party_name", "item_name", "date"],
+        },
+        "masters": {
+            "label": "Masters",
+            "sub_types": {
+                "ledger_master": {"label": "Ledger Master"},
+                "item_master": {"label": "Item Master"},
+                "sundry_debtors": {"label": "Sundry Debtors"},
+                "sundry_creditors": {"label": "Sundry Creditors"},
+            },
+            "fields_by_sub_type": {
+                "ledger_master": {
+                    "basic_info": ["ledger_name", "parent", "address", "phone", "gst"],
+                    "financial": ["opening_balance", "closing_balance", "balance_difference"],
+                },
+                "sundry_debtors": {
+                    "basic_info": ["ledger_name", "parent", "address", "phone", "gst"],
+                    "financial": ["opening_balance", "closing_balance", "balance_difference"],
+                },
+                "sundry_creditors": {
+                    "basic_info": ["ledger_name", "parent", "address", "phone", "gst"],
+                    "financial": ["opening_balance", "closing_balance", "balance_difference"],
+                },
+                "item_master": {
+                    "basic_info": ["item_name", "group"],
+                    "stock": ["opening_stock", "closing_stock"],
+                    "financial": ["rate", "value"],
+                    "details": ["unit"],
+                },
+            },
+            "suggested_columns": {
+                "ledger_master": ["ledger_name", "closing_balance"],
+                "sundry_debtors": ["ledger_name", "closing_balance", "balance_difference"],
+                "sundry_creditors": ["ledger_name", "closing_balance", "balance_difference"],
+                "item_master": ["item_name", "closing_stock", "value"],
+            },
+            "group_by_candidates": {
+                "ledger_master": ["ledger_name", "gst"],
+                "sundry_debtors": ["ledger_name", "gst"],
+                "sundry_creditors": ["ledger_name", "gst"],
+                "item_master": ["item_name"],
+            },
+        },
     },
-    "item_master": {
-        "label": "Item Master",
-        "subtypes": [],
-        "fields": ["item_name", "opening_stock", "closing_stock", "rate", "value"],
+    "calculations": {
+        "balance_difference": "closing_balance - opening_balance",
+        "percentage": "(row_amount / total_amount) * 100",
+        "total_amount": "sum(amount)",
     },
-    "ledger_master": {
-        "label": "Ledger Master",
-        "subtypes": [],
-        "fields": ["name", "address", "phone", "gst", "opening_balance", "closing_balance"],
-    },
-}
-
-CALCULATION_FIELDS = {
-    "balance_difference": "balance_difference",
-    "percentage": "percentage",
-    "total_amount": "total_amount",
 }
 
 
 class AnalyticsRequest(BaseModel):
-    dataset: str = Field(..., description="transactions | item_master | ledger_master")
-    transaction_type: str = Field("sales", description="sales | purchase")
-    selected_columns: List[str] = Field(default_factory=list)
-    calculations: List[str] = Field(default_factory=list)
+    type: str = Field("transactions", description="transactions | masters")
+    sub_type: str = Field("sales", description="sales | purchase | ledger_master | item_master | sundry_debtors | sundry_creditors")
+    columns: List[str] = Field(default_factory=list)
     filters: Dict[str, str] = Field(default_factory=dict)
+    calculations: List[str] = Field(default_factory=list)
+    group_by: List[str] = Field(default_factory=list)
+    # backward compatibility
+    dataset: str | None = None
+    transaction_type: str | None = None
+    selected_columns: List[str] | None = None
 
 
 def _safe_float(value: Any) -> float:
     try:
         return float(value or 0)
-    except (TypeError, ValueError):
+    except (ValueError, TypeError):
         return 0.0
 
 
-def _apply_filters(rows: List[Dict[str, Any]], filters: Dict[str, str]) -> List[Dict[str, Any]]:
-    party = (filters.get("party_name") or "").strip().lower()
-    item = (filters.get("item_name") or "").strip().lower()
-    query = (filters.get("search") or "").strip().lower()
-
-    def matches(row: Dict[str, Any]) -> bool:
-        if party and party not in str(row.get("party_name", "")).lower():
-            return False
-        if item and item not in str(row.get("item_name", "")).lower():
-            return False
-        if query:
-            haystack = " ".join(str(v) for v in row.values()).lower()
-            if query not in haystack:
-                return False
-        return True
-
-    return [row for row in rows if matches(row)]
+def _normalize_request(req: AnalyticsRequest) -> AnalyticsRequest:
+    if req.dataset:
+        if req.dataset == "transactions":
+            req.type = "transactions"
+            req.sub_type = req.transaction_type or "sales"
+        elif req.dataset in ("ledger_master", "item_master"):
+            req.type = "masters"
+            req.sub_type = req.dataset
+    if req.selected_columns is not None and not req.columns:
+        req.columns = req.selected_columns
+    return req
 
 
-def _mock_transactions(transaction_type: str) -> List[Dict[str, Any]]:
-    return [
-        {
-            "date": "20260401",
-            "party_name": "A1 Traders",
-            "item_name": "Steel Rod",
-            "quantity": 25,
-            "amount": 87500 if transaction_type == "sales" else 71200,
-        },
-        {
-            "date": "20260402",
-            "party_name": "Bright Metals",
-            "item_name": "Copper Wire",
-            "quantity": 14,
-            "amount": 63400 if transaction_type == "sales" else 51200,
-        },
-    ]
+def _flatten_field_categories(field_map: Dict[str, List[str]]) -> List[str]:
+    fields: List[str] = []
+    for _, value in field_map.items():
+        for field in value:
+            if field not in fields:
+                fields.append(field)
+    return fields
 
 
-def _mock_items() -> List[Dict[str, Any]]:
-    return [
-        {"item_name": "Steel Rod", "opening_stock": 120, "closing_stock": 95, "rate": 3500, "value": 332500},
-        {"item_name": "Copper Wire", "opening_stock": 80, "closing_stock": 70, "rate": 4600, "value": 322000},
-    ]
+def _default_columns(req: AnalyticsRequest) -> List[str]:
+    if req.type == "transactions":
+        return ANALYTICS_CONFIG["types"]["transactions"]["suggested_columns"]
+    suggested = ANALYTICS_CONFIG["types"]["masters"]["suggested_columns"].get(req.sub_type, [])
+    return suggested
 
 
-def _mock_ledgers() -> List[Dict[str, Any]]:
-    return [
-        {
-            "name": "A1 Traders",
-            "address": "Mumbai",
-            "phone": "9999999999",
-            "gst": "27ABCDE1234F1Z5",
-            "opening_balance": 120000,
-            "closing_balance": 98000,
-        },
-        {
-            "name": "Bright Metals",
-            "address": "Pune",
-            "phone": "8888888888",
-            "gst": "27FGHIJ5678K1Z2",
-            "opening_balance": 87000,
-            "closing_balance": 103000,
-        },
-    ]
+def _row_measure(row: Dict[str, Any]) -> float:
+    return (
+        _safe_float(row.get("amount"))
+        or _safe_float(row.get("value"))
+        or _safe_float(row.get("closing_balance"))
+        or _safe_float(row.get("closing_stock"))
+    )
 
 
-async def _fetch_dataset_rows(req: AnalyticsRequest) -> List[Dict[str, Any]]:
-    if req.dataset == "transactions":
-        daybook = await tally_client.get_daybook(
+async def _fetch_rows(req: AnalyticsRequest) -> List[Dict[str, Any]]:
+    if req.type == "transactions":
+        vouchers = await tally_client.get_daybook(
             req.filters.get("date_from", ""),
             req.filters.get("date_to", ""),
         )
-        tx_type = "purchase" if req.transaction_type == "purchase" else "sales"
-        rows = []
-        for row in daybook:
-            voucher_type = str(row.get("type", "")).lower()
-            if tx_type not in voucher_type:
+        rows: List[Dict[str, Any]] = []
+        for voucher in vouchers:
+            voucher_type = str(voucher.get("type", "")).lower()
+            if req.sub_type == "sales" and "sale" not in voucher_type:
+                continue
+            if req.sub_type == "purchase" and "purchase" not in voucher_type:
                 continue
             rows.append(
                 {
-                    "date": row.get("date", ""),
-                    "party_name": row.get("party", ""),
-                    "item_name": row.get("ledgers", ""),
-                    "quantity": 1,
-                    "amount": _safe_float(row.get("amount")),
+                    "date": voucher.get("date", ""),
+                    "month": str(voucher.get("date", ""))[4:6] if voucher.get("date") else "",
+                    "year": str(voucher.get("date", ""))[:4] if voucher.get("date") else "",
+                    "party_name": voucher.get("party", ""),
+                    "item_name": voucher.get("item_name", "") or voucher.get("ledgers", ""),
+                    "voucher_type": voucher.get("type", ""),
+                    "voucher_number": voucher.get("number", ""),
+                    "quantity": _safe_float(voucher.get("quantity", 0)),
+                    "unit": voucher.get("unit", ""),
+                    "amount": _safe_float(voucher.get("amount")),
+                    "ledgers": voucher.get("ledgers", ""),
+                    "narration": voucher.get("narration", ""),
                 }
             )
         return rows
 
-    if req.dataset == "item_master":
-        stock_items = await tally_client.get_stock_items()
+    if req.sub_type in ("ledger_master", "sundry_debtors", "sundry_creditors"):
+        ledgers = await tally_client.get_ledgers()
+        rows = [
+            {
+                "ledger_name": ledger.get("name", "") or ledger.get("parent", ""),
+                "parent": ledger.get("parent", ""),
+                "address": ledger.get("address", ""),
+                "phone": ledger.get("phone", ""),
+                "gst": ledger.get("gst", ""),
+                "opening_balance": _safe_float(ledger.get("opening")),
+                "closing_balance": _safe_float(ledger.get("closing")),
+                "balance_difference": round(_safe_float(ledger.get("closing")) - _safe_float(ledger.get("opening")), 2),
+            }
+            for ledger in ledgers
+        ]
+        if req.sub_type == "sundry_debtors":
+            return [row for row in rows if "sundry debtors" in str(row.get("parent", "")).lower()]
+        if req.sub_type == "sundry_creditors":
+            return [row for row in rows if "sundry creditors" in str(row.get("parent", "")).lower()]
+        return rows
+
+    if req.sub_type == "item_master":
+        items = await tally_client.get_stock_items()
         return [
             {
                 "item_name": item.get("name", ""),
+                "group": item.get("group", ""),
                 "opening_stock": _safe_float(item.get("quantity")),
                 "closing_stock": _safe_float(item.get("quantity")),
                 "rate": _safe_float(item.get("rate")),
                 "value": _safe_float(item.get("value")),
+                "unit": item.get("unit", ""),
             }
-            for item in stock_items
-        ]
-
-    if req.dataset == "ledger_master":
-        ledgers = await tally_client.get_ledgers()
-        return [
-            {
-                "name": ledger.get("name", ""),
-                "address": "",
-                "phone": "",
-                "gst": "",
-                "opening_balance": _safe_float(ledger.get("opening")),
-                "closing_balance": _safe_float(ledger.get("closing")),
-            }
-            for ledger in ledgers
+            for item in items
         ]
 
     return []
 
 
-def _apply_calculations(rows: List[Dict[str, Any]], calculations: List[str]) -> List[Dict[str, Any]]:
-    if not rows:
+def _apply_filters(rows: List[Dict[str, Any]], filters: Dict[str, str]) -> List[Dict[str, Any]]:
+    search = (filters.get("search") or "").strip().lower()
+    party_name = (filters.get("party_name") or "").strip().lower()
+    item_name = (filters.get("item_name") or "").strip().lower()
+    date_from = (filters.get("date_from") or "").strip()
+    date_to = (filters.get("date_to") or "").strip()
+
+    def _match(row: Dict[str, Any]) -> bool:
+        if party_name and party_name not in str(row.get("party_name", row.get("ledger_name", ""))).lower():
+            return False
+        if item_name and item_name not in str(row.get("item_name", "")).lower():
+            return False
+        if date_from:
+            row_date = str(row.get("date", ""))
+            if row_date and row_date < date_from.replace("-", ""):
+                return False
+        if date_to:
+            row_date = str(row.get("date", ""))
+            if row_date and row_date > date_to.replace("-", ""):
+                return False
+        if search:
+            joined = " ".join(str(v) for v in row.values()).lower()
+            if search not in joined:
+                return False
+        return True
+
+    return [row for row in rows if _match(row)]
+
+
+def _group_rows(rows: List[Dict[str, Any]], group_by: List[str]) -> List[Dict[str, Any]]:
+    if not group_by:
         return rows
 
-    total_amount = sum(_safe_float(row.get("amount")) for row in rows)
+    numeric_fields = [
+        "quantity",
+        "amount",
+        "opening_stock",
+        "closing_stock",
+        "rate",
+        "value",
+        "opening_balance",
+        "closing_balance",
+    ]
+    grouped: Dict[tuple, Dict[str, Any]] = {}
     for row in rows:
+        key = tuple(row.get(field) for field in group_by)
+        if key not in grouped:
+            grouped[key] = {field: row.get(field) for field in group_by}
+            for numeric in numeric_fields:
+                grouped[key][numeric] = 0.0
+            grouped[key]["_count"] = 0
+        grouped[key]["_count"] += 1
+        for numeric in numeric_fields:
+            grouped[key][numeric] += _safe_float(row.get(numeric))
+    return list(grouped.values())
+
+
+def _apply_calculations(rows: List[Dict[str, Any]], calculations: List[str]) -> tuple[List[Dict[str, Any]], float]:
+    if not rows:
+        return rows, 0.0
+
+    total_amount = round(sum(_row_measure(row) for row in rows), 2)
+    for row in rows:
+        if "total_amount" in calculations:
+            row["total_amount"] = total_amount
+        if "percentage" in calculations:
+            measure = _row_measure(row)
+            row["percentage"] = round((measure / total_amount) * 100, 2) if total_amount > 0 else 0.0
         if "balance_difference" in calculations:
             row["balance_difference"] = round(
                 _safe_float(row.get("closing_balance")) - _safe_float(row.get("opening_balance")),
                 2,
             )
-        if "percentage" in calculations:
-            amount = _safe_float(row.get("amount")) or _safe_float(row.get("value")) or _safe_float(row.get("closing_balance"))
-            row["percentage"] = round((amount / total_amount) * 100, 2) if total_amount > 0 else 0.0
-        if "total_amount" in calculations:
-            row["total_amount"] = round(
-                _safe_float(row.get("amount")) + _safe_float(row.get("value")) + _safe_float(row.get("closing_balance")),
-                2,
-            )
-    return rows
+    return rows, total_amount
+
+
+def _available_fields_for(req: AnalyticsRequest) -> List[str]:
+    if req.type == "transactions":
+        return _flatten_field_categories(ANALYTICS_CONFIG["types"]["transactions"]["fields"])
+    field_map = ANALYTICS_CONFIG["types"]["masters"]["fields_by_sub_type"].get(req.sub_type, {})
+    return _flatten_field_categories(field_map)
 
 
 @router.get("/config")
 async def analytics_config(current_user=Depends(get_current_user)):
-    return {"datasets": DATASET_CONFIG, "calculations": CALCULATION_FIELDS}
+    return deepcopy(ANALYTICS_CONFIG)
 
 
 @router.post("")
 @router.post("/")
 @router.post("/run")
 async def get_analytics(req: AnalyticsRequest, current_user=Depends(get_current_user)):
-    if req.dataset not in DATASET_CONFIG:
-        return {"data": [], "error": "Invalid dataset"}
+    req = _normalize_request(req)
+    if req.type not in ("transactions", "masters"):
+        return {"data": [], "error": "Invalid type"}
 
     try:
-        rows = await _fetch_dataset_rows(req)
-    except Exception:
-        if req.dataset == "transactions":
-            rows = _mock_transactions(req.transaction_type)
-        elif req.dataset == "item_master":
-            rows = _mock_items()
-        else:
-            rows = _mock_ledgers()
+        rows = await _fetch_rows(req)
+        fetch_error = ""
+    except Exception as exc:
+        rows = []
+        fetch_error = f"Tally fetch failed: {str(exc)}"
 
     rows = _apply_filters(rows, req.filters)
-    rows = _apply_calculations(rows, req.calculations)
+    raw_fields = list({key for row in rows for key in row.keys()})
+    rows = _group_rows(rows, req.group_by)
+    rows, total_amount = _apply_calculations(rows, req.calculations)
 
-    base_fields = DATASET_CONFIG[req.dataset]["fields"]
-    selected = req.selected_columns or base_fields
-    visible_columns = selected + [c for c in req.calculations if c in CALCULATION_FIELDS]
-    ordered_cols: List[str] = []
-    for col in visible_columns:
-        if col not in ordered_cols:
-            ordered_cols.append(col)
+    available_fields = _available_fields_for(req)
+    for field in raw_fields:
+        if field not in available_fields:
+            available_fields.append(field)
+    selected_columns = req.columns or _default_columns(req)
+    visible_columns: List[str] = []
+    for column in selected_columns + [c for c in req.calculations if c in ANALYTICS_CONFIG["calculations"]]:
+        if column not in visible_columns:
+            visible_columns.append(column)
 
-    result = [{col: row.get(col) for col in ordered_cols} for row in rows]
-
+    filtered_rows = [{key: row.get(key) for key in visible_columns} for row in rows]
     return {
-        "dataset": req.dataset,
-        "transaction_type": req.transaction_type,
-        "columns": ordered_cols,
-        "records": len(result),
-        "data": result,
-        "mode": "live" if result else "mock",
+        "type": req.type,
+        "sub_type": req.sub_type,
+        "columns": visible_columns,
+        "available_fields": available_fields,
+        "records": len(filtered_rows),
+        "total_amount": total_amount,
+        "applied_filters": {k: v for k, v in req.filters.items() if v},
+        "group_by": req.group_by,
+        "data": filtered_rows,
+        "mode": "live",
+        "message": "No records returned from Tally for this selection." if not filtered_rows and not fetch_error else "",
+        "error": fetch_error,
     }

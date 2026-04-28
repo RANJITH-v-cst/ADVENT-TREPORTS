@@ -113,56 +113,7 @@ export default function DashboardPage() {
           <div className="report-row"><span className="label">Bank Accounts</span><span className="value">{fmtAmt(summary.cash_bank.bank)} Dr</span></div>
         </div>
 
-        {/* Row 4 - Taxation Details */}
-        <div className="report-card">
-          <div className="report-header"><h3>GST Pending: GSTR-1</h3></div>
-          <div className="report-row"><span className="label">Uncertain Transactions</span><span className="value">Count: {summary.gst.gstr1.uncertain}</span></div>
-          <div className="report-row"><span className="label">Transactions Ready for Upload</span><span className="value">Count: {summary.gst.gstr1.ready}</span></div>
-        </div>
 
-        <div className="report-card">
-          <div className="report-header"><h3>GST Pending: GSTR-3B</h3></div>
-          <div className="report-row"><span className="label">Uncertain Transactions</span><span className="value">Count: {summary.gst.gstr3b.uncertain}</span></div>
-        </div>
-
-        <div className="report-card">
-          <div className="report-header"><h3>GST Recon: GSTR-1</h3></div>
-          <div className="report-row"><span className="label">Uncertain Transactions</span><span className="value">Count: {summary.gst.recon_gstr1.uncertain}</span></div>
-          <div className="report-row"><span className="label">Reconciled Transactions</span><span className="value">Count: {summary.gst.recon_gstr1.reconciled}</span></div>
-          <div className="report-row"><span className="label">Unreconciled Transactions</span><span className="value">Count: {summary.gst.recon_gstr1.unreconciled}</span></div>
-        </div>
-
-        <div className="report-card">
-          <div className="report-header"><h3>GST Recon: GSTR-2A</h3></div>
-          <div className="report-row"><span className="label">Uncertain Transactions</span><span className="value">Count: {summary.gst.recon_gstr2a.uncertain}</span></div>
-          <div className="report-row"><span className="label">Reconciled Transactions</span><span className="value">Count: {summary.gst.recon_gstr2a.reconciled}</span></div>
-          <div className="report-row"><span className="label">Unreconciled Transactions</span><span className="value">Count: {summary.gst.recon_gstr2a.unreconciled}</span></div>
-        </div>
-
-        <div className="report-card">
-          <div className="report-header"><h3>GST Recon: GSTR-2B</h3></div>
-          <div className="report-row"><span className="label">Uncertain Transactions</span><span className="value">Count: {summary.gst.recon_gstr2b.uncertain}</span></div>
-          <div className="report-row"><span className="label">Reconciled Transactions</span><span className="value">Count: {summary.gst.recon_gstr2b.reconciled}</span></div>
-          <div className="report-row"><span className="label">Unreconciled Transactions</span><span className="value">Count: {summary.gst.recon_gstr2b.unreconciled}</span></div>
-        </div>
-
-        <Link to="/gst" className="report-card">
-          <div className="report-header"><h3>GST Liability/ITC (3B)</h3></div>
-          <div className="report-row"><span className="label">Tax Liability</span><span className="value negative">{fmtAmt(summary.gst.liability_itc.tax_liability)}</span></div>
-          <div className="report-row"><span className="label">ITC</span><span className="value positive">{fmtAmt(summary.gst.liability_itc.itc)}</span></div>
-        </Link>
-
-        {/* Row 5 - Banking */}
-        <div className="report-card">
-          <div className="report-header" style={{ borderLeft: '4px solid #f97316' }}><h3>Banking Activities</h3></div>
-          <div className="report-row"><span className="label" style={{ background: 'rgba(249,115,22,0.1)', padding: '2px 6px', borderRadius: 4, color: '#f97316' }}>Recon Pending (Books)</span><span className="value">{fmtAmt(summary.banking.recon_pending_books)}</span></div>
-          <div className="report-row"><span className="label">Recon Pending (Banks)</span><span className="value">{fmtAmt(summary.banking.recon_pending_banks)}</span></div>
-        </div>
-
-        <div className="report-card">
-          <div className="report-header"><h3>Balance As Per Bank</h3></div>
-          <div className="report-row"><span className="label">Connected Banking</span><span className="value">{fmtAmt(summary.banking.balance_as_per_bank)}</span></div>
-        </div>
       </div>
     </div>
   );

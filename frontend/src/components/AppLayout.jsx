@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Outlet, NavLink } from 'react-router-dom';
 import { useAuth } from '../AuthContext';
 import { getCompanies } from '../api';
-import { LayoutDashboard, TrendingUp, ShoppingCart, Package, Wallet, BookOpen, Scale, Shield, LogOut, BarChart3, Receipt, FileText, Search, Calendar } from 'lucide-react';
+import { LayoutDashboard, TrendingUp, ShoppingCart, Package, Wallet, BookOpen, Scale, Shield, LogOut, BarChart3, Receipt, FileText, Search, Calendar, PieChart } from 'lucide-react';
 
 export default function AppLayout() {
   const { user, logout } = useAuth();
@@ -42,10 +42,7 @@ export default function AppLayout() {
           <NavLink to="/outstanding" className={({ isActive }) => isActive ? 'active' : ''}><Wallet size={18} /> Outstanding</NavLink>
           <NavLink to="/ledgers" className={({ isActive }) => isActive ? 'active' : ''}><BookOpen size={18} /> Ledgers</NavLink>
           <NavLink to="/financials" className={({ isActive }) => isActive ? 'active' : ''}><Scale size={18} /> Financials</NavLink>
-
-          <div className="nav-label">Taxation</div>
-          <NavLink to="/gst" className={({ isActive }) => isActive ? 'active' : ''}><Receipt size={18} /> GST Report</NavLink>
-          <NavLink to="/tds" className={({ isActive }) => isActive ? 'active' : ''}><FileText size={18} /> TDS Report</NavLink>
+          <NavLink to="/analytics" className={({ isActive }) => isActive ? 'active' : ''}><PieChart size={18} /> Analytics</NavLink>
         </nav>
         <div className="sidebar-footer">
           <div className="user-avatar">{initials}</div>

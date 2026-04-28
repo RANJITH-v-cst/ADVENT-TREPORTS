@@ -105,17 +105,47 @@ async def get_ledger_groups(company: str = "") -> list:
 
 
 async def get_ledgers(company: str = "") -> list:
-    xml = _collection("DashLedgers", "Ledger", ["NAME", "PARENT", "CLOSINGBALANCE", "OPENINGBALANCE"], company=company)
+    xml = _collection(
+        "DashLedgers",
+        "Ledger",
+        [
+            "NAME",
+            "PARENT",
+            "CLOSINGBALANCE",
+            "OPENINGBALANCE",
+            "MAILINGNAME",
+            "LEDGERMOBILE",
+            "PARTYGSTIN",
+            "GSTIN",
+            "ADDRESS",
+        ],
+        company=company,
+    )
     data = await fetch_tally(xml)
     env = data.get("ENVELOPE", data)
     body = env.get("BODY", {}).get("DATA", {}).get("COLLECTION", {})
     ledgers = body.get("LEDGER", [])
     if isinstance(ledgers, dict):
         ledgers = [ledgers]
-    return [{"name": tally_val(l.get("NAME", "")),
-             "parent": tally_val(l.get("PARENT", "")),
-             "closing": tally_float(l.get("CLOSINGBALANCE", 0)),
-             "opening": tally_float(l.get("OPENINGBALANCE", 0))} for l in ledgers]
+    result = []
+    for l in ledgers:
+        address_raw = l.get("ADDRESS", "")
+        if isinstance(address_raw, list):
+            address = ", ".join(tally_val(a) for a in address_raw if tally_val(a))
+        else:
+            address = tally_val(address_raw)
+        result.append(
+            {
+                "name": tally_val(l.get("NAME", l.get("@NAME", l.get("MAILINGNAME", "")))),
+                "parent": tally_val(l.get("PARENT", "")),
+                "closing": tally_float(l.get("CLOSINGBALANCE", 0)),
+                "opening": tally_float(l.get("OPENINGBALANCE", 0)),
+                "address": address,
+                "phone": tally_val(l.get("LEDGERMOBILE", l.get("PHONENUMBER", ""))),
+                "gst": tally_val(l.get("PARTYGSTIN", l.get("GSTIN", ""))),
+            }
+        )
+    return result
 
 
 async def get_stock_items(company: str = "") -> list:
@@ -191,12 +221,35 @@ async def get_daybook(from_date: str = "", to_date: str = "", company: str = "")
                 break
         if amount == 0 and entries:
             amount = abs(tally_float(entries[0].get("AMOUNT", 0)))
+
+        inventory_entries = v.get("ALLINVENTORYENTRIES.LIST", v.get("INVENTORYENTRIES.LIST", []))
+        if isinstance(inventory_entries, dict):
+            inventory_entries = [inventory_entries]
+        elif not isinstance(inventory_entries, list):
+            inventory_entries = []
+
+        item_name = ""
+        quantity = 0.0
+        unit = ""
+        if inventory_entries:
+            first_item = inventory_entries[0] if isinstance(inventory_entries[0], dict) else {}
+            item_name = tally_val(first_item.get("STOCKITEMNAME", ""))
+            qty_raw = tally_val(first_item.get("BILLEDQTY", first_item.get("ACTUALQTY", "")))
+            if qty_raw:
+                nums = re.findall(r'[-+]?\d*\.?\d+', qty_raw)
+                quantity = float(nums[0]) if nums else 0.0
+                qty_parts = qty_raw.split(" ", 1)
+                unit = qty_parts[1].strip() if len(qty_parts) > 1 else ""
+
         result.append({
             "date": tally_val(v.get("DATE", "")),
             "type": tally_val(v.get("VOUCHERTYPENAME", "")),
             "number": tally_val(v.get("VOUCHERNUMBER", "")),
             "party": tally_val(v.get("PARTYLEDGERNAME", ledger_names[0] if ledger_names else "")),
             "ledgers": ", ".join(ledger_names),
+            "item_name": item_name,
+            "quantity": quantity,
+            "unit": unit,
             "amount": amount,
             "narration": tally_val(v.get("NARRATION", "")),
         })

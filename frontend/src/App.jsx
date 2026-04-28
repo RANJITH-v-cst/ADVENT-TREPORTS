@@ -11,6 +11,7 @@ import AdminPage from './pages/AdminPage';
 import GSTReportPage from './pages/GSTReportPage';
 import TDSReportPage from './pages/TDSReportPage';
 import AppLayout from './components/AppLayout';
+import AnalyticsPage from './pages/AnalyticsPage';
 
 function ProtectedRoute({ children, adminOnly }) {
   const { user, loading } = useAuth();
@@ -37,6 +38,7 @@ function AppRoutes() {
         <Route path="financials" element={<FinancialsPage />} />
         <Route path="gst" element={<GSTReportPage />} />
         <Route path="tds" element={<TDSReportPage />} />
+        <Route path="analytics" element={<AnalyticsPage />} />
       </Route>
       <Route path="*" element={<Navigate to="/" />} />
     </Routes>

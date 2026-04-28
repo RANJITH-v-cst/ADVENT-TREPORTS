@@ -632,7 +632,7 @@ export default function AnalyticsPage() {
   // ─── Styles ────────────────────────────────────────────────────────────────
 
   const css = `
-    @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Syne:wght@700;800&family=DM+Sans:wght@400;500;600&display=swap');
+  
 
     .ap-root * { box-sizing: border-box; }
 
@@ -651,11 +651,9 @@ export default function AnalyticsPage() {
       --text-primary:   #e2e8f0;
       --text-secondary: #8a92a6;
       --text-muted:     #4a5568;
-      --font-ui:      'DM Sans', sans-serif;
-      --font-display: 'Syne', sans-serif;
-      --font-mono:    'JetBrains Mono', monospace;
+   
       --shimmer: linear-gradient(90deg, #1c2336 25%, #252e42 50%, #1c2336 75%);
-      font-family: var(--font-ui);
+    
       color: var(--text-primary);
       font-size: 13px;
       display: flex;

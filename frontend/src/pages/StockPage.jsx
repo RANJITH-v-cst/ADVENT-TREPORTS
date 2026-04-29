@@ -99,7 +99,7 @@ export default function StockPage() {
         </div>
 
         <div className="kpi-card glass-card" style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', textAlign: 'center', gap: 12 }}>
-          <div style={{ width: 64, height: 64, borderRadius: '20px', background: 'rgba(245, 158, 11, 0.1)', display: 'flex', alignItems: 'center', justify-content: 'center', color: 'var(--amber)' }}>
+          <div style={{ width: 64, height: 64, borderRadius: '20px', background: 'rgba(245, 158, 11, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--amber)' }}>
             <Archive size={32} />
           </div>
           <div>
@@ -165,7 +165,7 @@ export default function StockPage() {
               <button className="modal-close" onClick={() => setSelectedItem(null)} style={{ top: 24, right: 24 }}><X size={20} /></button>
               
               <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginBottom: 32 }}>
-                <div style={{ width: 56, height: 56, background: 'rgba(99, 102, 241, 0.1)', borderRadius: 16, display: 'flex', alignItems: 'center', justify-content: 'center', color: 'var(--accent)' }}>
+                <div style={{ width: 56, height: 56, background: 'rgba(99, 102, 241, 0.1)', borderRadius: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent)' }}>
                   <Package size={28} />
                 </div>
                 <div>

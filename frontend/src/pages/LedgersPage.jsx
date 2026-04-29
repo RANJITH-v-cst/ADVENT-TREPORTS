@@ -103,7 +103,7 @@ export default function LedgersPage() {
               <button className="modal-close" onClick={() => setSelectedLedger(null)} style={{ top: 24, right: 24 }}><X size={20} /></button>
               
               <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginBottom: 32 }}>
-                <div style={{ width: 56, height: 56, background: 'rgba(168, 85, 247, 0.1)', borderRadius: 16, display: 'flex', alignItems: 'center', justify-content: 'center', color: 'var(--purple)' }}>
+                <div style={{ width: 56, height: 56, background: 'rgba(168, 85, 247, 0.1)', borderRadius: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--purple)' }}>
                   <Activity size={28} />
                 </div>
                 <div>

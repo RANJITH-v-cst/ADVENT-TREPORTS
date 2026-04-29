@@ -113,7 +113,7 @@ export default function DaybookPage({ filterType, title = 'Day Book' }) {
               <button className="modal-close" onClick={() => setSelectedVch(null)} style={{ top: 24, right: 24 }}><X size={20} /></button>
               
               <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginBottom: 32 }}>
-                <div className={`badge ${getBadge(selectedVch.type)}`} style={{ width: 56, height: 56, borderRadius: 16, display: 'flex', alignItems: 'center', justify-content: 'center', background: 'rgba(255,255,255,0.05)' }}>
+                <div className={`badge ${getBadge(selectedVch.type)}`} style={{ width: 56, height: 56, borderRadius: 16, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.05)' }}>
                   <Receipt size={28} />
                 </div>
                 <div>

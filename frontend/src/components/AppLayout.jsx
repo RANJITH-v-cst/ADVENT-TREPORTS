@@ -44,51 +44,70 @@ export default function AppLayout() {
     <div className="app-layout">
       <aside className="sidebar">
         <div className="sidebar-brand">
-          <div className="brand-icon"><BarChart3 size={20} /></div>
+          <div className="logo"><BarChart3 size={20} color="white" /></div>
           <div>
             <h1>ADVENT TREPORTS</h1>
-            <span style={{ color: 'var(--accent-light)', fontWeight: 700, fontSize: '12px' }}>{companyName}</span>
+            <span style={{ color: 'var(--text-muted)', fontWeight: 600, fontSize: '11px', display: 'block', marginTop: 2 }}>{companyName}</span>
           </div>
         </div>
+        
         <nav className="sidebar-nav">
           <div className="nav-label">Core Modules</div>
-          <NavLink to="/" end className={({ isActive }) => isActive ? 'active' : ''}><LayoutDashboard size={18} /> Dashboard</NavLink>
-          <NavLink to="/sales" className={({ isActive }) => isActive ? 'active' : ''}><TrendingUp size={18} /> Sales</NavLink>
-          <NavLink to="/purchases" className={({ isActive }) => isActive ? 'active' : ''}><ShoppingCart size={18} /> Purchases</NavLink>
-          <NavLink to="/stock" className={({ isActive }) => isActive ? 'active' : ''}><Package size={18} /> Stock</NavLink>
-          <NavLink to="/outstanding" className={({ isActive }) => isActive ? 'active' : ''}><Wallet size={18} /> Outstanding</NavLink>
-          <NavLink to="/ledgers" className={({ isActive }) => isActive ? 'active' : ''}><BookOpen size={18} /> Ledgers</NavLink>
-          <NavLink to="/financials" className={({ isActive }) => isActive ? 'active' : ''}><Scale size={18} /> Financials</NavLink>
-          <NavLink to="/analytics" className={({ isActive }) => isActive ? 'active' : ''}><PieChart size={18} /> Analytics</NavLink>
+          <NavLink to="/" end className={({ isActive }) => isActive ? 'active' : ''}>
+            <LayoutDashboard size={18} /> <span className="nav-text">Dashboard</span>
+          </NavLink>
+          <NavLink to="/sales" className={({ isActive }) => isActive ? 'active' : ''}>
+            <TrendingUp size={18} /> <span className="nav-text">Sales</span>
+          </NavLink>
+          <NavLink to="/purchases" className={({ isActive }) => isActive ? 'active' : ''}>
+            <ShoppingCart size={18} /> <span className="nav-text">Purchases</span>
+          </NavLink>
+          <NavLink to="/stock" className={({ isActive }) => isActive ? 'active' : ''}>
+            <Package size={18} /> <span className="nav-text">Inventory</span>
+          </NavLink>
+          <NavLink to="/outstanding" className={({ isActive }) => isActive ? 'active' : ''}>
+            <Wallet size={18} /> <span className="nav-text">Outstanding</span>
+          </NavLink>
+          <NavLink to="/ledgers" className={({ isActive }) => isActive ? 'active' : ''}>
+            <BookOpen size={18} /> <span className="nav-text">Ledgers</span>
+          </NavLink>
+          <NavLink to="/financials" className={({ isActive }) => isActive ? 'active' : ''}>
+            <Scale size={18} /> <span className="nav-text">Financials</span>
+          </NavLink>
+          
+          <div className="nav-label">Advanced Intelligence</div>
+          <NavLink to="/analytics" className={({ isActive }) => isActive ? 'active' : ''}>
+            <PieChart size={18} /> <span className="nav-text">AI Analytics</span>
+          </NavLink>
         </nav>
+        
         <div className="sidebar-footer">
           <div className="user-avatar">{initials}</div>
-          <div className="user-info" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-            <p title={user?.email} style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap', margin: 0 }}>{user?.email}</p>
-            <div 
-              onClick={logout} 
-              style={{ display: 'flex', alignItems: 'center', gap: 6, color: '#ef4444', cursor: 'pointer', fontSize: '13px', fontWeight: 600 }}
-              title="Click to Logout"
-            >
-              <LogOut size={14} /> Logout
-            </div>
+          <div className="user-info">
+            <p title={user?.email}>{user?.email?.split('@')[0]}</p>
+            <span>Tally Admin</span>
           </div>
+          <button onClick={logout} className="logout-btn" title="Sign Out">
+            <LogOut size={16} />
+          </button>
         </div>
       </aside>
       
       <main className="main-area">
         <header className="header">
-          <div style={{ flex: 1 }}></div>
-          <div className="header-right" style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
+          <div className="header-left">
+            {/* Future Breadcrumbs */}
+          </div>
+          <div className="header-right">
             <div className="date-filters">
-              <Calendar size={16} />
+              <Calendar size={14} color="var(--text-muted)" />
               <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)} />
-              <span>to</span>
+              <span>TO</span>
               <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)} />
             </div>
           </div>
         </header>
-        <div className="page-content-wrap" style={{ flex: 1, overflow: 'auto' }}>
+        <div className="page-content">
           <Outlet context={{ fromDate, toDate }} />
         </div>
       </main>

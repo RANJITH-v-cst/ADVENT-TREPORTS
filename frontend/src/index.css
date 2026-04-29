@@ -111,8 +111,15 @@ body {
   display: flex; align-items: center; justify-content: center;
   font-weight: 700; font-size: 14px; color: white;
 }
-.sidebar-footer .user-info { flex: 1; }
-.sidebar-footer .user-info p { font-size: 13px; font-weight: 600; }
+.sidebar-footer .user-info { flex: 1; min-width: 0; }
+.sidebar-footer .user-info p { 
+  font-size: 13px; 
+  font-weight: 600; 
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+  margin: 0;
+}
 .sidebar-footer .user-info span { font-size: 11px; color: var(--text-muted); }
 .sidebar-footer .logout-btn {
   background: none; border: none; color: var(--text-muted); cursor: pointer;

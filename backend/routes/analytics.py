@@ -1,5 +1,7 @@
 from copy import deepcopy
 from typing import Any, Dict, List
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from datetime import datetime
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
@@ -49,8 +51,8 @@ ANALYTICS_CONFIG: Dict[str, Any] = {
                 },
                 "item_master": {
                     "basic_info": ["item_name", "group"],
-                    "stock": ["opening_stock", "closing_stock"],
-                    "financial": ["rate", "value"],
+                    "stock": ["opening_stock", "purchase_qty", "sales_qty", "closing_stock"],
+                    "financial": ["opening_value", "purchase_value", "sales_value", "value", "rate", "purchase_rate", "sales_rate", "profit"],
                     "details": ["unit"],
                 },
             },
@@ -89,11 +91,50 @@ class AnalyticsRequest(BaseModel):
     selected_columns: List[str] | None = None
 
 
-def _safe_float(value: Any) -> float:
+# -----------------------------------
+# HELPER FUNCTIONS FOR ACCURACY
+# -----------------------------------
+
+def _safe_decimal(value: Any) -> Decimal:
+    """Safely converts any value to Decimal to avoid floating point inaccuracies."""
+    if value is None or value == "":
+        return Decimal("0.00")
     try:
-        return float(value or 0)
-    except (ValueError, TypeError):
-        return 0.0
+        if isinstance(value, str):
+            value = value.replace(",", "").strip()
+        return Decimal(str(value))
+    except (ValueError, TypeError, InvalidOperation):
+        return Decimal("0.00")
+
+def _norm_str(value: Any) -> str:
+    """Normalizes string fields, providing safe fallbacks for UI."""
+    if value is None:
+        return "-"
+    val_str = str(value).strip()
+    return val_str if val_str else "-"
+
+def _parse_tally_date(date_str: str) -> datetime | None:
+    """Safely parses Tally dates (YYYYMMDD) into comparable datetime objects."""
+    date_str = str(date_str).strip()
+    if len(date_str) == 8:
+        try:
+            return datetime.strptime(date_str, "%Y%m%d")
+        except ValueError:
+            pass
+    return None
+
+def _format_date(date_str: str) -> str:
+    """Formats raw YYYYMMDD to clean YYYY-MM-DD for the frontend."""
+    d = _parse_tally_date(date_str)
+    return d.strftime("%Y-%m-%d") if d else "-"
+
+def _format_currency(val: Decimal) -> str:
+    """Rounds accurately to 2 decimal places and adds comma separation."""
+    return f"{val.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP):,.2f}"
+
+def _format_percentage(val: Decimal) -> str:
+    """Formats percentage accurately to 2 decimal places."""
+    return f"{val.quantize(Decimal('0.01'), rounding=ROUND_HALF_UP):.2f}%"
 
 
 def _normalize_request(req: AnalyticsRequest) -> AnalyticsRequest:
@@ -125,12 +166,12 @@ def _default_columns(req: AnalyticsRequest) -> List[str]:
     return suggested
 
 
-def _row_measure(row: Dict[str, Any]) -> float:
+def _row_measure(row: Dict[str, Any]) -> Decimal:
     return (
-        _safe_float(row.get("amount"))
-        or _safe_float(row.get("value"))
-        or _safe_float(row.get("closing_balance"))
-        or _safe_float(row.get("closing_stock"))
+        _safe_decimal(row.get("amount"))
+        or _safe_decimal(row.get("value"))
+        or _safe_decimal(row.get("closing_balance"))
+        or _safe_decimal(row.get("closing_stock"))
     )
 
 
@@ -156,9 +197,9 @@ async def _fetch_rows(req: AnalyticsRequest) -> List[Dict[str, Any]]:
                     "item_name": voucher.get("item_name", "") or voucher.get("ledgers", ""),
                     "voucher_type": voucher.get("type", ""),
                     "voucher_number": voucher.get("number", ""),
-                    "quantity": _safe_float(voucher.get("quantity", 0)),
+                    "quantity": _safe_decimal(voucher.get("quantity", 0)),
                     "unit": voucher.get("unit", ""),
-                    "amount": _safe_float(voucher.get("amount")),
+                    "amount": _safe_decimal(voucher.get("amount")),
                     "ledgers": voucher.get("ledgers", ""),
                     "narration": voucher.get("narration", ""),
                 }
@@ -174,9 +215,9 @@ async def _fetch_rows(req: AnalyticsRequest) -> List[Dict[str, Any]]:
                 "address": ledger.get("address", ""),
                 "phone": ledger.get("phone", ""),
                 "gst": ledger.get("gst", ""),
-                "opening_balance": _safe_float(ledger.get("opening")),
-                "closing_balance": _safe_float(ledger.get("closing")),
-                "balance_difference": round(_safe_float(ledger.get("closing")) - _safe_float(ledger.get("opening")), 2),
+                "opening_balance": _safe_decimal(ledger.get("opening")),
+                "closing_balance": _safe_decimal(ledger.get("closing")),
+                "balance_difference": _safe_decimal(ledger.get("closing")) - _safe_decimal(ledger.get("opening")),
             }
             for ledger in ledgers
         ]
@@ -188,18 +229,37 @@ async def _fetch_rows(req: AnalyticsRequest) -> List[Dict[str, Any]]:
 
     if req.sub_type == "item_master":
         items = await tally_client.get_stock_items()
-        return [
-            {
+        rows = []
+        for item in items:
+            p_qty = _safe_decimal(item.get("inwards_qty"))
+            s_qty = _safe_decimal(item.get("outwards_qty"))
+            p_val = _safe_decimal(item.get("inwards_value"))
+            s_val = _safe_decimal(item.get("outwards_value"))
+            o_val = _safe_decimal(item.get("opening_value"))
+            c_val = _safe_decimal(item.get("value"))
+            
+            p_rate = (p_val / p_qty) if p_qty > 0 else Decimal("0.00")
+            s_rate = (s_val / s_qty) if s_qty > 0 else Decimal("0.00")
+            profit = s_val - (o_val + p_val - c_val)
+
+            rows.append({
                 "item_name": item.get("name", ""),
                 "group": item.get("group", ""),
-                "opening_stock": _safe_float(item.get("quantity")),
-                "closing_stock": _safe_float(item.get("quantity")),
-                "rate": _safe_float(item.get("rate")),
-                "value": _safe_float(item.get("value")),
+                "opening_stock": _safe_decimal(item.get("opening_stock")),
+                "closing_stock": _safe_decimal(item.get("closing_stock")),
+                "purchase_qty": p_qty,
+                "sales_qty": s_qty,
+                "purchase_value": p_val,
+                "sales_value": s_val,
+                "purchase_rate": p_rate,
+                "sales_rate": s_rate,
+                "profit": profit,
+                "opening_value": o_val,
+                "rate": _safe_decimal(item.get("rate")),
+                "value": c_val,
                 "unit": item.get("unit", ""),
-            }
-            for item in items
-        ]
+            })
+        return rows
 
     return []
 
@@ -208,22 +268,22 @@ def _apply_filters(rows: List[Dict[str, Any]], filters: Dict[str, str]) -> List[
     search = (filters.get("search") or "").strip().lower()
     party_name = (filters.get("party_name") or "").strip().lower()
     item_name = (filters.get("item_name") or "").strip().lower()
-    date_from = (filters.get("date_from") or "").strip()
-    date_to = (filters.get("date_to") or "").strip()
+    
+    date_from = _parse_tally_date(filters.get("date_from", "").replace("-", ""))
+    date_to = _parse_tally_date(filters.get("date_to", "").replace("-", ""))
 
     def _match(row: Dict[str, Any]) -> bool:
         if party_name and party_name not in str(row.get("party_name", row.get("ledger_name", ""))).lower():
             return False
         if item_name and item_name not in str(row.get("item_name", "")).lower():
             return False
-        if date_from:
-            row_date = str(row.get("date", ""))
-            if row_date and row_date < date_from.replace("-", ""):
-                return False
-        if date_to:
-            row_date = str(row.get("date", ""))
-            if row_date and row_date > date_to.replace("-", ""):
-                return False
+            
+        row_date = _parse_tally_date(str(row.get("date", "")))
+        if date_from and row_date and row_date < date_from:
+            return False
+        if date_to and row_date and row_date > date_to:
+            return False
+            
         if search:
             joined = " ".join(str(v) for v in row.values()).lower()
             if search not in joined:
@@ -238,45 +298,51 @@ def _group_rows(rows: List[Dict[str, Any]], group_by: List[str]) -> List[Dict[st
         return rows
 
     numeric_fields = [
-        "quantity",
-        "amount",
-        "opening_stock",
-        "closing_stock",
-        "rate",
-        "value",
-        "opening_balance",
-        "closing_balance",
+        "quantity", "amount", "opening_stock", "closing_stock", 
+        "rate", "value", "opening_balance", "closing_balance",
+        "purchase_qty", "sales_qty", "purchase_value", "sales_value",
+        "purchase_rate", "sales_rate", "profit", "opening_value"
     ]
     grouped: Dict[tuple, Dict[str, Any]] = {}
+    
     for row in rows:
-        key = tuple(row.get(field) for field in group_by)
+        key = tuple(_norm_str(row.get(field)) for field in group_by)
         if key not in grouped:
             grouped[key] = {field: row.get(field) for field in group_by}
             for numeric in numeric_fields:
-                grouped[key][numeric] = 0.0
+                grouped[key][numeric] = Decimal("0.00")
             grouped[key]["_count"] = 0
+            
         grouped[key]["_count"] += 1
         for numeric in numeric_fields:
-            grouped[key][numeric] += _safe_float(row.get(numeric))
+            if numeric in row:
+                grouped[key][numeric] += _safe_decimal(row.get(numeric))
+                
+    # Recompute rates correctly for grouped data instead of summing them directly
+    for g in grouped.values():
+        if "purchase_value" in g and "purchase_qty" in g and g["purchase_qty"] > 0:
+            g["purchase_rate"] = g["purchase_value"] / g["purchase_qty"]
+        if "sales_value" in g and "sales_qty" in g and g["sales_qty"] > 0:
+            g["sales_rate"] = g["sales_value"] / g["sales_qty"]
+            
     return list(grouped.values())
 
 
-def _apply_calculations(rows: List[Dict[str, Any]], calculations: List[str]) -> tuple[List[Dict[str, Any]], float]:
+def _apply_calculations(rows: List[Dict[str, Any]], calculations: List[str]) -> tuple[List[Dict[str, Any]], Decimal]:
     if not rows:
-        return rows, 0.0
+        return rows, Decimal("0.00")
 
-    total_amount = round(sum(_row_measure(row) for row in rows), 2)
+    total_amount = sum((_row_measure(row) for row in rows), Decimal("0.00"))
+    
     for row in rows:
         if "total_amount" in calculations:
             row["total_amount"] = total_amount
         if "percentage" in calculations:
             measure = _row_measure(row)
-            row["percentage"] = round((measure / total_amount) * 100, 2) if total_amount > 0 else 0.0
+            row["percentage"] = (measure / total_amount) * 100 if total_amount > 0 else Decimal("0.00")
         if "balance_difference" in calculations:
-            row["balance_difference"] = round(
-                _safe_float(row.get("closing_balance")) - _safe_float(row.get("opening_balance")),
-                2,
-            )
+            row["balance_difference"] = _safe_decimal(row.get("closing_balance")) - _safe_decimal(row.get("opening_balance"))
+            
     return rows, total_amount
 
 
@@ -285,6 +351,26 @@ def _available_fields_for(req: AnalyticsRequest) -> List[str]:
         return _flatten_field_categories(ANALYTICS_CONFIG["types"]["transactions"]["fields"])
     field_map = ANALYTICS_CONFIG["types"]["masters"]["fields_by_sub_type"].get(req.sub_type, {})
     return _flatten_field_categories(field_map)
+
+
+def _get_columns_meta(columns: List[str]) -> List[Dict[str, Any]]:
+    meta = []
+    currency_fields = {"amount", "value", "rate", "closing_balance", "opening_balance", "balance_difference", "total_amount", "purchase_value", "sales_value", "opening_value", "purchase_rate", "sales_rate", "profit"}
+    number_fields = {"quantity", "opening_stock", "closing_stock", "purchase_qty", "sales_qty", "month", "year"}
+    
+    for col in columns:
+        label = col.replace("_", " ").title()
+        if col in currency_fields:
+            meta.append({"key": col, "label": label, "type": "currency", "align": "right", "sortable": True})
+        elif col in number_fields:
+            meta.append({"key": col, "label": label, "type": "number", "align": "right", "sortable": True})
+        elif col == "percentage":
+            meta.append({"key": col, "label": label, "type": "percentage", "align": "right", "sortable": True})
+        elif col == "date":
+            meta.append({"key": col, "label": label, "type": "date", "align": "left", "sortable": True})
+        else:
+            meta.append({"key": col, "label": label, "type": "text", "align": "left", "sortable": True})
+    return meta
 
 
 @router.get("/config")
@@ -316,24 +402,62 @@ async def get_analytics(req: AnalyticsRequest, current_user=Depends(get_current_
     for field in raw_fields:
         if field not in available_fields:
             available_fields.append(field)
+            
     selected_columns = req.columns or _default_columns(req)
     visible_columns: List[str] = []
     for column in selected_columns + [c for c in req.calculations if c in ANALYTICS_CONFIG["calculations"]]:
         if column not in visible_columns:
             visible_columns.append(column)
 
-    filtered_rows = [{key: row.get(key) for key in visible_columns} for row in rows]
+    # Output Formatting (UI Ready)
+    columns_meta = _get_columns_meta(visible_columns)
+    meta_dict = {m["key"]: m for m in columns_meta}
+    
+    clean_data = []
+    totals = {k: Decimal("0.00") for k in visible_columns if meta_dict[k]["type"] in ("currency", "number")}
+    
+    for row in rows:
+        clean_row = {}
+        for col in visible_columns:
+            val = row.get(col)
+            m_type = meta_dict[col]["type"]
+            
+            if m_type == "currency":
+                d_val = _safe_decimal(val)
+                clean_row[col] = _format_currency(d_val)
+                totals[col] += d_val
+            elif m_type == "percentage":
+                clean_row[col] = _format_percentage(_safe_decimal(val))
+            elif m_type == "number":
+                d_val = _safe_decimal(val)
+                clean_row[col] = str(d_val.quantize(Decimal("1"))) if d_val == d_val.to_integral() else str(d_val)
+                totals[col] += d_val
+            elif m_type == "date":
+                clean_row[col] = _format_date(val)
+            else:
+                clean_row[col] = _norm_str(val)
+        clean_data.append(clean_row)
+
+    formatted_totals = {}
+    for col, val in totals.items():
+        if meta_dict[col]["type"] == "currency":
+            formatted_totals[col] = _format_currency(val)
+        else:
+            formatted_totals[col] = str(val.quantize(Decimal("1"))) if val == val.to_integral() else str(val)
+
     return {
         "type": req.type,
         "sub_type": req.sub_type,
         "columns": visible_columns,
+        "columns_meta": columns_meta,
         "available_fields": available_fields,
-        "records": len(filtered_rows),
-        "total_amount": total_amount,
+        "records": len(clean_data),
+        "total_amount": float(total_amount),
         "applied_filters": {k: v for k, v in req.filters.items() if v},
         "group_by": req.group_by,
-        "data": filtered_rows,
+        "data": clean_data,
+        "totals": formatted_totals,
         "mode": "live",
-        "message": "No records returned from Tally for this selection." if not filtered_rows and not fetch_error else "",
+        "message": "No records returned from Tally for this selection." if not clean_data and not fetch_error else "",
         "error": fetch_error,
     }

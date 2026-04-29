@@ -6,6 +6,7 @@ import React, {
   useRef,
 } from "react";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
+import { useOutletContext } from "react-router-dom";
 import {
   Download,
   FileText,
@@ -64,7 +65,7 @@ const CALCULATIONS = [
 
 const DEFAULT_FIELDS = {
   transactions: ["date", "party_name", "item_name", "quantity", "amount"],
-  item_master: ["item_name", "opening_stock", "closing_stock", "rate", "value"],
+  item_master: ["item_name", "opening_stock", "purchase_qty", "sales_qty", "closing_stock", "value"],
   ledger_master: [
     "ledger_name",
     "address",
@@ -106,6 +107,12 @@ const fmt = (v) => {
 const fmtINR = (n) => {
   const num = parseFloat(n) || 0;
   return "₹" + num.toLocaleString("en-IN", { maximumFractionDigits: 2 });
+};
+
+const fmtDate = (d) => {
+  const str = String(d || "");
+  if (str.length !== 8) return str || "—";
+  return `${str.slice(6)}-${str.slice(4, 6)}-${str.slice(0, 4)}`;
 };
 
 const isAmountField = (key) =>
@@ -336,6 +343,7 @@ function ErrorBanner({ message, onRetry, onDismiss }) {
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export default function AnalyticsPage() {
+  const { fromDate, toDate } = useOutletContext();
   // Config & Data
   const [dataset, setDataset] = useState("transactions");
   const [transactionType, setTransactionType] = useState("sales");
@@ -475,7 +483,11 @@ export default function AnalyticsPage() {
         sub_type: dataset === "transactions" ? transactionType : dataset,
         columns: selectedColumns,
         calculations,
-        filters,
+        filters: {
+          ...filters,
+          date_from: fromDate ? fromDate.replace(/-/g, '') : "",
+          date_to: toDate ? toDate.replace(/-/g, '') : ""
+        },
         group_by: groupBy ? [groupBy] : [],
       };
 
@@ -571,7 +583,9 @@ export default function AnalyticsPage() {
     sortedData.map((row, i) => {
       const shaped = { sr_no: i + 1 };
       tableHeaders.forEach((h) => {
-        shaped[h] = row[h] ?? "";
+        let val = row[h] ?? "";
+        if (h === "date") val = fmtDate(val);
+        shaped[h] = val;
       });
       return shaped;
     });
@@ -632,10 +646,7 @@ export default function AnalyticsPage() {
   // ─── Styles ────────────────────────────────────────────────────────────────
 
   const css = `
-  
-
     .ap-root * { box-sizing: border-box; }
-
     .ap-root {
       --accent:    #3b82f6;
       --green:     #10b981;
@@ -833,9 +844,7 @@ export default function AnalyticsPage() {
     }
     .ap-field-btn-clr:hover { color: var(--red); border-color: rgba(239,68,68,0.3); }
 
-    .ap-field-list { display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow-y: auto; }
-    .ap-field-list::-webkit-scrollbar { width: 3px; }
-    .ap-field-list::-webkit-scrollbar-thumb { background: var(--border-hi); border-radius: 2px; }
+    .ap-field-list { display: flex; flex-direction: column; gap: 4px; padding-bottom: 8px; }
 
     .ap-field-item {
       display: flex; align-items: center; justify-content: space-between;
@@ -1192,10 +1201,8 @@ export default function AnalyticsPage() {
               <div
                 className="ap-section"
                 style={{
-                  flex: 1,
                   display: "flex",
                   flexDirection: "column",
-                  overflow: "hidden",
                 }}
               >
                 <div className="ap-section-label">
@@ -1367,43 +1374,7 @@ export default function AnalyticsPage() {
 
           {/* ── Right Panel ─────────────────────────────────────────────── */}
           <div className="ap-right">
-            {/* KPI Cards */}
-            {(insights || isLoading) && (
-              <div className="ap-kpi-row">
-                <KpiCard
-                  label="Total Analyzed Value"
-                  value={insights ? fmtINR(insights.totalAmt) : "—"}
-                  sub={`${insights?.count ?? 0} record${insights?.count !== 1 ? "s" : ""} · ${dataset.replace("_", " ")}`}
-                  color="blue"
-                  icon={TrendingUp}
-                  loading={isLoading}
-                />
-                <KpiCard
-                  label="Top Entity"
-                  value={insights?.topName ?? "—"}
-                  sub={insights ? fmtINR(insights.topAmt) : ""}
-                  color="green"
-                  icon={BarChart2}
-                  loading={isLoading}
-                />
-                <KpiCard
-                  label="Dataset"
-                  value={
-                    DATASET_OPTIONS.find((o) => o.value === dataset)?.label ??
-                    dataset
-                  }
-                  sub={
-                    dataset === "transactions"
-                      ? `Type: ${transactionType}`
-                      : groupBy
-                        ? `Grouped by: ${groupBy}`
-                        : "No grouping"
-                  }
-                  color="purple"
-                  loading={isLoading}
-                />
-              </div>
-            )}
+
 
             {/* Error Banner */}
             {errorMessage && (
@@ -1593,7 +1564,7 @@ export default function AnalyticsPage() {
                                   className="td-mono"
                                   style={{ color: "var(--text-secondary)" }}
                                 >
-                                  {v}
+                                  {fmtDate(v)}
                                 </td>
                               );
 

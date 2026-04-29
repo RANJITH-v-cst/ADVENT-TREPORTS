@@ -31,7 +31,6 @@ export const getMonthly = () => API.get('/api/dashboard/monthly');
 export const getLedgers = () => API.get('/api/dashboard/ledgers');
 export const getStock = () => API.get('/api/dashboard/stock');
 export const getDaybook = (from, to) => API.get('/api/dashboard/daybook', { params: { from_date: from, to_date: to } });
-export const getGroups = () => API.get('/api/dashboard/groups');
 export const getGSTReport = () => API.get('/api/dashboard/gst-report');
 export const getTDSReport = () => API.get('/api/dashboard/tds-report');
 export const getAnalyticsConfig = () => API.get('/api/analytics/config');

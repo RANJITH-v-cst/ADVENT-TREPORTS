@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { Outlet, NavLink } from 'react-router-dom';
 import { useAuth } from '../AuthContext';
 import { getCompanies } from '../api';
-import { LayoutDashboard, TrendingUp, ShoppingCart, Package, Wallet, BookOpen, Scale, Shield, LogOut, BarChart3, Receipt, FileText, Search, Calendar, PieChart } from 'lucide-react';
+import { LayoutDashboard, TrendingUp, ShoppingCart, Package, Wallet, BookOpen, Scale, LogOut, BarChart3, Receipt, FileText, Calendar, PieChart } from 'lucide-react';
 
 export default function AppLayout() {
   const { user, logout } = useAuth();
@@ -12,12 +12,29 @@ export default function AppLayout() {
   useEffect(() => {
     getCompanies().then(res => {
       const cos = res.data?.companies || [];
-      if (cos.length > 0) setCompanyName(cos[0].name);
+      if (cos.length > 0) {
+        setCompanyName(cos[0].name);
+        
+        // Default to Current Financial Year from Tally (format: YYYYMMDD)
+        const rawDate = cos[0].from;
+        if (rawDate && rawDate.length === 8) {
+          const y = rawDate.slice(0, 4);
+          const m = rawDate.slice(4, 6);
+          const d = rawDate.slice(6, 8);
+          const startDate = `${y}-${m}-${d}`;
+          setFromDate(startDate);
+          
+          // Calculate end of FY
+          const endDate = new Date(parseInt(y) + 1, parseInt(m) - 1, parseInt(d));
+          endDate.setDate(endDate.getDate() - 1);
+          setToDate(endDate.toISOString().split('T')[0]);
+        }
+      }
     }).catch(() => setCompanyName('Tally ERP'));
   }, []);
 
   // Global Filter States
-  const [searchTerm, setSearchTerm] = useState('');
+
   const [fromDate, setFromDate] = useState('2023-04-01');
   const [toDate, setToDate] = useState('2024-03-31');
 
@@ -61,15 +78,7 @@ export default function AppLayout() {
       
       <main className="main-area">
         <header className="header">
-          <div className="search-bar">
-            <Search size={18} />
-            <input 
-              type="text" 
-              placeholder="Universal Search..." 
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-            />
-          </div>
+          <div style={{ flex: 1 }}></div>
           <div className="header-right" style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
             <div className="date-filters">
               <Calendar size={16} />
@@ -80,7 +89,7 @@ export default function AppLayout() {
           </div>
         </header>
         <div className="page-content-wrap" style={{ flex: 1, overflow: 'auto' }}>
-          <Outlet context={{ searchTerm, fromDate, toDate }} />
+          <Outlet context={{ fromDate, toDate }} />
         </div>
       </main>
     </div>

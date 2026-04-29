@@ -71,38 +71,6 @@ async def daybook(request: Request, from_date: str = "", to_date: str = ""):
         raise HTTPException(status_code=502, detail=f"Tally error: {str(e)}")
 
 
-@router.get("/profit-loss")
-async def profit_loss(request: Request):
-    get_current_user(request)
-    company = request.headers.get("X-Company-Name", "")
-    try:
-        data = await tally_client.get_profit_loss(company=company)
-        return data
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Tally error: {str(e)}")
-
-
-@router.get("/balance-sheet")
-async def balance_sheet(request: Request):
-    get_current_user(request)
-    company = request.headers.get("X-Company-Name", "")
-    try:
-        data = await tally_client.get_balance_sheet(company=company)
-        return data
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Tally error: {str(e)}")
-
-
-@router.get("/groups")
-async def groups(request: Request):
-    get_current_user(request)
-    company = request.headers.get("X-Company-Name", "")
-    try:
-        data = await tally_client.get_ledger_groups(company=company)
-        return {"groups": data}
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Tally error: {str(e)}")
-
 
 @router.get("/gst-report")
 async def gst_report(request: Request):

@@ -7,7 +7,7 @@ import xmltodict
 
 TALLY_URL = "http://localhost:9000"
 CACHE = {}
-CACHE_TTL = 10  # 10 seconds cache for expensive reports
+CACHE_TTL = 60  # 60 seconds cache for all Tally queries
 
 
 def clean_xml(text: str) -> str:
@@ -61,8 +61,16 @@ def _collection(name: str, type_name: str, fields: list, filter_str: str = "", c
 </TDLMESSAGE></TDL></DESC></BODY></ENVELOPE>"""
 
 
+import hashlib
+
 async def fetch_tally(xml: str) -> dict:
     """Post XML to Tally and parse response."""
+    cache_key = f"xml_{hashlib.md5(xml.encode()).hexdigest()}"
+    if cache_key in CACHE:
+        ts, val = CACHE[cache_key]
+        if time.time() - ts < CACHE_TTL:
+            return val
+
     async with httpx.AsyncClient(timeout=15.0) as client:
         resp = await client.post(
             TALLY_URL,
@@ -73,7 +81,9 @@ async def fetch_tally(xml: str) -> dict:
             raise Exception(f"Tally returned HTTP {resp.status_code}")
         cleaned = clean_xml(resp.text)
         try:
-            return xmltodict.parse(cleaned)
+            val = xmltodict.parse(cleaned)
+            CACHE[cache_key] = (time.time(), val)
+            return val
         except Exception:
             raise Exception(f"Failed to parse Tally XML. Raw: {cleaned[:300]}")
 
@@ -149,7 +159,7 @@ async def get_ledgers(company: str = "") -> list:
 
 
 async def get_stock_items(company: str = "") -> list:
-    xml = _collection("DashStock", "StockItem", ["NAME", "PARENT", "CLOSINGBALANCE", "CLOSINGVALUE", "CLOSINGRATE", "BASEUNITS"], company=company)
+    xml = _collection("DashStock", "StockItem", ["NAME", "PARENT", "CLOSINGBALANCE", "CLOSINGVALUE", "CLOSINGRATE", "BASEUNITS", "OPENINGBALANCE", "OPENINGVALUE", "INWARDQUANTITY", "INWARDVALUE", "OUTWARDQUANTITY", "OUTWARDVALUE"], company=company)
     data = await fetch_tally(xml)
     env = data.get("ENVELOPE", data)
     body = env.get("BODY", {}).get("DATA", {}).get("COLLECTION", {})
@@ -157,17 +167,31 @@ async def get_stock_items(company: str = "") -> list:
     if isinstance(items, dict):
         items = [items]
     result = []
+    
+    def _parse_qty(raw):
+        val = tally_val(raw)
+        if not val: return 0.0
+        nums = re.findall(r'[-+]?\d*\.?\d+', val)
+        return float(nums[0]) if nums else 0.0
+
     for it in items:
-        qty_raw = tally_val(it.get("CLOSINGBALANCE", ""))
-        qty = 0.0
-        if qty_raw:
-            nums = re.findall(r'[-+]?\d*\.?\d+', qty_raw)
-            qty = float(nums[0]) if nums else 0.0
+        qty = _parse_qty(it.get("CLOSINGBALANCE", ""))
+        opening_qty = _parse_qty(it.get("OPENINGBALANCE", ""))
+        inward_qty = _parse_qty(it.get("INWARDQUANTITY", ""))
+        outward_qty = _parse_qty(it.get("OUTWARDQUANTITY", ""))
+        
         result.append({
-            "name": tally_val(it.get("NAME", "")),
+            "name": tally_val(it.get("NAME", it.get("@NAME", ""))),
             "group": tally_val(it.get("PARENT", "")),
             "quantity": qty,
+            "opening_stock": opening_qty,
+            "closing_stock": qty,
+            "inwards_qty": inward_qty,
+            "outwards_qty": outward_qty,
+            "inwards_value": tally_float(it.get("INWARDVALUE", 0)),
+            "outwards_value": tally_float(it.get("OUTWARDVALUE", 0)),
             "value": tally_float(it.get("CLOSINGVALUE", 0)),
+            "opening_value": tally_float(it.get("OPENINGVALUE", 0)),
             "rate": tally_float(it.get("CLOSINGRATE", 0)),
             "unit": tally_val(it.get("BASEUNITS", "")),
         })
@@ -256,33 +280,8 @@ async def get_daybook(from_date: str = "", to_date: str = "", company: str = "")
     return result
 
 
-async def get_profit_loss(company: str = "") -> dict:
-    """Get Profit & Loss statement data."""
-    sv_company = f"<SVCOMPANY>{company}</SVCOMPANY>" if company else ""
-    xml = f"""<ENVELOPE>
-<HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST><TYPE>Data</TYPE><ID>Profit and Loss</ID></HEADER>
-<BODY><DESC><STATICVARIABLES><SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>{sv_company}</STATICVARIABLES></DESC></BODY></ENVELOPE>"""
-    data = await fetch_tally(xml)
-    return data
-
-
-async def get_balance_sheet(company: str = "") -> dict:
-    """Get Balance Sheet data."""
-    sv_company = f"<SVCOMPANY>{company}</SVCOMPANY>" if company else ""
-    xml = f"""<ENVELOPE>
-<HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST><TYPE>Data</TYPE><ID>Balance Sheet</ID></HEADER>
-<BODY><DESC><STATICVARIABLES><SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>{sv_company}</STATICVARIABLES></DESC></BODY></ENVELOPE>"""
-    data = await fetch_tally(xml)
-    return data
-
-
 async def get_dashboard_summary(company: str = "") -> dict:
     """Aggregate accurate KPIs from ledger groups for the 10 reports."""
-    cache_key = f"summary_{company}"
-    if cache_key in CACHE:
-        ts, val = CACHE[cache_key]
-        if time.time() - ts < CACHE_TTL: return val
-
     # Parallel Fetch
     groups_task = get_ledger_groups(company=company)
     ledgers_task = get_ledgers(company=company)
@@ -385,7 +384,6 @@ async def get_dashboard_summary(company: str = "") -> dict:
         "top_ledgers": top_ledgers,
         "expense_breakdown": [{"name": k, "value": v} for k, v in expense_breakdown.items()],
     }
-    CACHE[cache_key] = (time.time(), res)
     return res
 
 
@@ -403,10 +401,7 @@ async def get_monthly_data(company: str = "") -> list:
     
     for i, m in enumerate(months):
         if i <= fy_month:
-            # Create a realistic looking curve using a simple math function instead of straight linear
-            import math
-            variance = math.sin((i+1) * 0.8) * 0.3 + 1.0 # Varies between 0.7 and 1.3
-            factor = (1.0 / (fy_month + 1)) * variance
+            factor = 1.0 / (fy_month + 1)
             result.append({
                 "month": m,
                 "sales": round(total_sales * factor, 2),

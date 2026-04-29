@@ -3,7 +3,6 @@ import React, {
   useMemo,
   useState,
   useCallback,
-  useRef,
 } from "react";
 import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
 import { useOutletContext } from "react-router-dom";
@@ -18,7 +17,6 @@ import {
   ChevronDown,
   Search,
   X,
-  TrendingUp,
   BarChart2,
   AlertCircle,
   RefreshCw,
@@ -27,7 +25,33 @@ import {
   ArrowDown,
   CheckSquare,
   Square,
+  LayoutGrid,
+  Layers,
+  Database,
+  Calendar,
+  Zap,
+  PieChart as PieChartIcon,
+  TrendingUp,
+  Box,
+  TrendingDown,
+  Activity,
 } from "lucide-react";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  Cell,
+  PieChart,
+  Pie,
+  AreaChart,
+  Area,
+} from "recharts";
 import * as XLSX from "xlsx";
 import jsPDF from "jspdf";
 import "jspdf-autotable";
@@ -36,26 +60,17 @@ import { getAnalyticsConfig, runAnalytics } from "../api";
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const DATASET_OPTIONS = [
-  { value: "transactions", label: "Transactions" },
-  { value: "item_master", label: "Item Master" },
-  { value: "ledger_master", label: "Ledger Master" },
-  { value: "sundry_debtors", label: "Sundry Debtors" },
-  { value: "sundry_creditors", label: "Sundry Creditors" },
+  { value: "transactions", label: "Transactions", icon: Zap },
+  { value: "item_master", label: "Item Master", icon: Layers },
+  { value: "ledger_master", label: "Ledger Master", icon: Database },
+  { value: "sundry_debtors", label: "Sundry Debtors", icon: Database },
+  { value: "sundry_creditors", label: "Sundry Creditors", icon: Database },
 ];
 
 const TRANSACTION_TYPES = [
   { value: "sales", label: "Sales" },
   { value: "purchase", label: "Purchase" },
 ];
-
-const GROUP_BY_LABELS = {
-  "": "None",
-  party_name: "Party Name",
-  item_name: "Item Name",
-  ledger_name: "Ledger Name",
-  date: "Date",
-  gst: "GST Number",
-};
 
 const CALCULATIONS = [
   { key: "balance_difference", label: "Balance Difference" },
@@ -66,276 +81,45 @@ const CALCULATIONS = [
 const DEFAULT_FIELDS = {
   transactions: ["date", "party_name", "item_name", "quantity", "amount"],
   item_master: ["item_name", "opening_stock", "purchase_qty", "sales_qty", "closing_stock", "value"],
-  ledger_master: [
-    "ledger_name",
-    "address",
-    "phone",
-    "gst",
-    "opening_balance",
-    "closing_balance",
-  ],
-  sundry_debtors: [
-    "ledger_name",
-    "address",
-    "phone",
-    "gst",
-    "opening_balance",
-    "closing_balance",
-    "balance_difference",
-  ],
-  sundry_creditors: [
-    "ledger_name",
-    "address",
-    "phone",
-    "gst",
-    "opening_balance",
-    "closing_balance",
-    "balance_difference",
-  ],
+  ledger_master: ["ledger_name", "phone", "gst", "opening_balance", "closing_balance"],
+  sundry_debtors: ["ledger_name", "phone", "gst", "opening_balance", "closing_balance", "balance_difference"],
+  sundry_creditors: ["ledger_name", "phone", "gst", "opening_balance", "closing_balance", "balance_difference"],
 };
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
-
-const fmt = (v) => {
-  if (v === null || v === undefined || v === "") return "—";
-  if (typeof v === "number") {
-    return v.toLocaleString("en-IN", { maximumFractionDigits: 2 });
-  }
-  return String(v);
-};
-
-const fmtINR = (n) => {
-  const num = parseFloat(n) || 0;
-  return "₹" + num.toLocaleString("en-IN", { maximumFractionDigits: 2 });
-};
-
-const fmtDate = (d) => {
-  const str = String(d || "");
-  if (str.length !== 8) return str || "—";
-  return `${str.slice(6)}-${str.slice(4, 6)}-${str.slice(0, 4)}`;
-};
-
-const isAmountField = (key) =>
-  [
-    "amount",
-    "total_amount",
-    "value",
-    "opening_balance",
-    "closing_balance",
-    "balance_difference",
-    "rate",
-    "opening_stock",
-    "closing_stock",
-    "quantity",
-  ].includes(key);
-
-const getTopAmount = (row) =>
-  parseFloat(
-    row.amount ??
-      row.total_amount ??
-      row.value ??
-      row.closing_balance ??
-      row.balance_difference ??
-      0,
-  );
-
-const getTopName = (row) =>
-  row.party_name ??
-  row.item_name ??
-  row.ledger_name ??
-  row.name ??
-  Object.values(row)[0] ??
-  "—";
+const CHART_COLORS = ["#6366f1", "#10b981", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4", "#ec4899"];
 
 // ─── Sub-components ──────────────────────────────────────────────────────────
-
-function KpiCard({ label, value, sub, color, icon: Icon, loading }) {
-  const palette = {
-    blue: {
-      bg: "rgba(59,130,246,0.08)",
-      border: "rgba(59,130,246,0.2)",
-      text: "#60a5fa",
-    },
-    green: {
-      bg: "rgba(16,185,129,0.08)",
-      border: "rgba(16,185,129,0.2)",
-      text: "#34d399",
-    },
-    amber: {
-      bg: "rgba(245,158,11,0.08)",
-      border: "rgba(245,158,11,0.2)",
-      text: "#fbbf24",
-    },
-    purple: {
-      bg: "rgba(139,92,246,0.08)",
-      border: "rgba(139,92,246,0.2)",
-      text: "#a78bfa",
-    },
-  };
-  const p = palette[color] || palette.blue;
-  return (
-    <div
-      style={{
-        flex: 1,
-        padding: "14px 16px",
-        background: p.bg,
-        border: `1px solid ${p.border}`,
-        borderRadius: "10px",
-        position: "relative",
-        overflow: "hidden",
-      }}
-    >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-          marginBottom: 6,
-        }}
-      >
-        {Icon && <Icon size={13} color={p.text} />}
-        <span
-          style={{
-            fontSize: 10,
-            fontWeight: 700,
-            letterSpacing: "0.1em",
-            textTransform: "uppercase",
-            color: "var(--text-muted)",
-          }}
-        >
-          {label}
-        </span>
-      </div>
-      {loading ? (
-        <div
-          style={{
-            height: 28,
-            width: 120,
-            borderRadius: 4,
-            background: "var(--shimmer)",
-            animation: "shimmer 1.2s infinite",
-          }}
-        />
-      ) : (
-        <div
-          style={{
-            fontSize: 20,
-            fontWeight: 800,
-            color: p.text,
-            fontFamily: "var(--font-display)",
-            letterSpacing: "-0.02em",
-            lineHeight: 1.1,
-          }}
-        >
-          {value}
-        </div>
-      )}
-      {sub && (
-        <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>
-          {sub}
-        </div>
-      )}
-    </div>
-  );
-}
 
 function SortableHeader({ label, field, sortState, onSort }) {
   const active = sortState.field === field;
   return (
     <th
       onClick={() => onSort(field)}
-      style={{
-        padding: "10px 14px",
-        textAlign: "left",
-        fontSize: 10,
-        fontWeight: 700,
-        letterSpacing: "0.08em",
-        textTransform: "uppercase",
-        color: active ? "var(--accent)" : "var(--text-muted)",
-        background: "var(--bg-elevated)",
-        borderBottom: "1px solid var(--border)",
-        whiteSpace: "nowrap",
-        position: "sticky",
-        top: 0,
-        zIndex: 1,
-        cursor: "pointer",
-        userSelect: "none",
-        transition: "color 0.15s",
-      }}
+      className={`th-sortable ${active ? "active" : ""}`}
     >
-      <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-        {label}
+      <div className="th-content">
+        <span>{label}</span>
         {active ? (
-          sortState.dir === "asc" ? (
-            <ArrowUp size={10} />
-          ) : (
-            <ArrowDown size={10} />
-          )
+          sortState.dir === "asc" ? <ArrowUp size={12} /> : <ArrowDown size={12} />
         ) : (
-          <ArrowUpDown size={10} style={{ opacity: 0.3 }} />
+          <ArrowUpDown size={12} className="th-icon-muted" />
         )}
-      </span>
+      </div>
     </th>
   );
 }
 
-function ErrorBanner({ message, onRetry, onDismiss }) {
+function InsightCard({ title, value, icon: Icon, color, subtext }) {
   return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "flex-start",
-        gap: 10,
-        padding: "10px 14px",
-        marginBottom: 10,
-        background: "rgba(239,68,68,0.08)",
-        border: "1px solid rgba(239,68,68,0.25)",
-        borderRadius: 8,
-      }}
-    >
-      <AlertCircle
-        size={14}
-        color="#f87171"
-        style={{ flexShrink: 0, marginTop: 2 }}
-      />
-      <span
-        style={{ flex: 1, fontSize: 12, color: "#fca5a5", lineHeight: 1.5 }}
-      >
-        {message}
-      </span>
-      <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-        {onRetry && (
-          <button
-            onClick={onRetry}
-            style={{
-              fontSize: 11,
-              fontWeight: 600,
-              padding: "2px 9px",
-              borderRadius: 4,
-              background: "rgba(239,68,68,0.12)",
-              border: "1px solid rgba(239,68,68,0.3)",
-              color: "#f87171",
-              cursor: "pointer",
-            }}
-          >
-            Retry
-          </button>
-        )}
-        <button
-          onClick={onDismiss}
-          style={{
-            fontSize: 11,
-            padding: "2px 9px",
-            borderRadius: 4,
-            background: "transparent",
-            border: "1px solid var(--border)",
-            color: "var(--text-muted)",
-            cursor: "pointer",
-          }}
-        >
-          <X size={11} />
-        </button>
+    <div className="insight-card">
+      <div className="insight-header">
+        <div className="insight-icon" style={{ background: `rgba(${color}, 0.1)`, color: `rgb(${color})` }}>
+          <Icon size={18} />
+        </div>
+        <span className="insight-title">{title}</span>
       </div>
+      <div className="insight-value">{value}</div>
+      {subtext && <div className="insight-subtext">{subtext}</div>}
     </div>
   );
 }
@@ -344,22 +128,16 @@ function ErrorBanner({ message, onRetry, onDismiss }) {
 
 export default function AnalyticsPage() {
   const { fromDate, toDate } = useOutletContext();
-  // Config & Data
   const [dataset, setDataset] = useState("transactions");
   const [transactionType, setTransactionType] = useState("sales");
-  const [availableFields, setAvailableFields] = useState(
-    DEFAULT_FIELDS.transactions,
-  );
+  const [availableFields, setAvailableFields] = useState(DEFAULT_FIELDS.transactions);
   const [selectedColumns, setSelectedColumns] = useState([]);
   const [calculations, setCalculations] = useState([]);
-  const [filters, setFilters] = useState({
-    search: "",
-    party_name: "",
-    item_name: "",
-  });
+  const [filters, setFilters] = useState({ search: "", party_name: "", item_name: "" });
   const [groupBy, setGroupBy] = useState("");
   const [data, setData] = useState([]);
-  const [columnsFromApi, setColumnsFromApi] = useState([]);
+  const [columnsMeta, setColumnsMeta] = useState([]);
+  const [totals, setTotals] = useState({});
   const [loading, setLoading] = useState(false);
   const [configLoading, setConfigLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
@@ -367,11 +145,48 @@ export default function AnalyticsPage() {
   const [fieldSearch, setFieldSearch] = useState("");
   const [lastRun, setLastRun] = useState(null);
   const [fetchTime, setFetchTime] = useState(null);
+  const [showCharts, setShowCharts] = useState(true);
 
-  // Table
   const [sortState, setSortState] = useState({ field: null, dir: "asc" });
   const [page, setPage] = useState(1);
   const PAGE_SIZE = 50;
+
+  // ── Smart Data Parsing for Visuals ────────────────────────────────────────
+  const chartData = useMemo(() => {
+    if (!data.length) return [];
+    
+    // Group by Date for Trends
+    const trendsMap = {};
+    data.forEach(row => {
+      const d = row.date || "Unknown";
+      const amtStr = String(row.amount || row.value || row.closing_balance || "0").replace(/,/g, "").replace("₹", "");
+      const amt = parseFloat(amtStr) || 0;
+      trendsMap[d] = (trendsMap[d] || 0) + amt;
+    });
+
+    return Object.entries(trendsMap)
+      .map(([date, value]) => ({ date, value }))
+      .sort((a, b) => a.date.localeCompare(b.date));
+  }, [data]);
+
+  const distributionData = useMemo(() => {
+    if (!data.length) return [];
+    const nameKey = data[0].party_name ? "party_name" : data[0].item_name ? "item_name" : data[0].ledger_name ? "ledger_name" : null;
+    if (!nameKey) return [];
+
+    const map = {};
+    data.forEach(row => {
+      const name = row[nameKey] || "Other";
+      const amtStr = String(row.amount || row.value || row.closing_balance || "0").replace(/,/g, "").replace("₹", "");
+      const amt = parseFloat(amtStr) || 0;
+      map[name] = (map[name] || 0) + amt;
+    });
+
+    return Object.entries(map)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 7);
+  }, [data]);
 
   // ── Load config when dataset changes ──────────────────────────────────────
   useEffect(() => {
@@ -380,7 +195,8 @@ export default function AnalyticsPage() {
       setConfigLoading(true);
       setErrorMessage("");
       setData([]);
-      setColumnsFromApi([]);
+      setColumnsMeta([]);
+      setTotals({});
       setSelectedColumns([]);
       setGroupBy("");
       setPage(1);
@@ -392,17 +208,11 @@ export default function AnalyticsPage() {
 
         let apiFields = [];
         if (dataset === "transactions") {
-          apiFields = Object.values(
-            result?.types?.transactions?.fields || {},
-          ).flat();
+          apiFields = Object.values(result?.types?.transactions?.fields || {}).flat();
         } else {
-          apiFields = Object.values(
-            result?.types?.masters?.fields_by_sub_type?.[dataset] || {},
-          ).flat();
+          apiFields = Object.values(result?.types?.masters?.fields_by_sub_type?.[dataset] || {}).flat();
         }
-        setAvailableFields(
-          apiFields.length ? apiFields : DEFAULT_FIELDS[dataset] || [],
-        );
+        setAvailableFields(apiFields.length ? apiFields : DEFAULT_FIELDS[dataset] || []);
       } catch {
         if (!cancelled) setAvailableFields(DEFAULT_FIELDS[dataset] || []);
       } finally {
@@ -410,67 +220,39 @@ export default function AnalyticsPage() {
       }
     };
     load();
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, [dataset]);
 
-  // ── Drag & Drop ───────────────────────────────────────────────────────────
-  const onDragEnd = useCallback(
-    ({ source, destination }) => {
-      if (!destination) return;
-
-      if (
-        source.droppableId === "availableFields" &&
-        destination.droppableId === "selectedColumns"
-      ) {
-        const field = filteredAvailableFields[source.index];
-        if (field && !selectedColumns.includes(field)) {
-          setSelectedColumns((prev) => {
-            const next = [...prev];
-            next.splice(destination.index, 0, field);
-            return next;
-          });
-        }
-        return;
-      }
-
-      if (
-        source.droppableId === "selectedColumns" &&
-        destination.droppableId === "selectedColumns"
-      ) {
+  const onDragEnd = useCallback(({ source, destination }) => {
+    if (!destination) return;
+    if (source.droppableId === "availableFields" && destination.droppableId === "selectedColumns") {
+      const field = filteredAvailableFields[source.index];
+      if (field && !selectedColumns.includes(field)) {
         setSelectedColumns((prev) => {
           const next = [...prev];
-          const [moved] = next.splice(source.index, 1);
-          next.splice(destination.index, 0, moved);
+          next.splice(destination.index, 0, field);
           return next;
         });
       }
-    },
-    [selectedColumns],
-  ); // eslint-disable-line
+      return;
+    }
+    if (source.droppableId === "selectedColumns" && destination.droppableId === "selectedColumns") {
+      setSelectedColumns((prev) => {
+        const next = [...prev];
+        const [moved] = next.splice(source.index, 1);
+        next.splice(destination.index, 0, moved);
+        return next;
+      });
+    }
+  }, [selectedColumns, availableFields, fieldSearch]);
 
-  // ── Column helpers ────────────────────────────────────────────────────────
-  const removeColumn = (col) =>
-    setSelectedColumns((p) => p.filter((c) => c !== col));
-  const addColumn = (col) => {
-    if (!selectedColumns.includes(col)) setSelectedColumns((p) => [...p, col]);
-  };
-  const selectAll = () => setSelectedColumns([...availableFields]);
-  const clearAll = () => {
-    setSelectedColumns([]);
-    setData([]);
-    setColumnsFromApi([]);
-  };
-  const toggleCalc = (k) =>
-    setCalculations((p) =>
-      p.includes(k) ? p.filter((x) => x !== k) : [...p, k],
-    );
+  const removeColumn = (col) => setSelectedColumns((p) => p.filter((c) => c !== col));
+  const addColumn = (col) => { if (!selectedColumns.includes(col)) setSelectedColumns((p) => [...p, col]); };
+  const toggleCalc = (k) => setCalculations((p) => p.includes(k) ? p.filter((x) => x !== k) : [...p, k]);
 
-  // ── Run Analysis ──────────────────────────────────────────────────────────
   const fetchData = async () => {
     if (selectedColumns.length === 0) {
-      setErrorMessage("Select at least one column before running analysis.");
+      setErrorMessage("Please select at least one column to analyze.");
       return;
     }
     setLoading(true);
@@ -485,8 +267,8 @@ export default function AnalyticsPage() {
         calculations,
         filters: {
           ...filters,
-          date_from: fromDate ? fromDate.replace(/-/g, '') : "",
-          date_to: toDate ? toDate.replace(/-/g, '') : ""
+          date_from: fromDate ? fromDate.replace(/-/g, "") : "",
+          date_to: toDate ? toDate.replace(/-/g, "") : "",
         },
         group_by: groupBy ? [groupBy] : [],
       };
@@ -495,10 +277,10 @@ export default function AnalyticsPage() {
       const result = res.data || {};
 
       setData(result.data || []);
-      setColumnsFromApi(result.columns || []);
-      if (result.available_fields?.length)
-        setAvailableFields(result.available_fields);
-
+      setColumnsMeta(result.columns_meta || []);
+      setTotals(result.totals || {});
+      
+      if (result.available_fields?.length) setAvailableFields(result.available_fields);
       const msg = result.error || result.message;
       if (msg) setErrorMessage(msg);
 
@@ -507,1108 +289,384 @@ export default function AnalyticsPage() {
       setLastRun(new Date());
       setFetchTime(Math.round(performance.now() - t0));
     } catch (err) {
-      const apiError =
-        err?.response?.data?.error || err?.message || "Failed to run analysis.";
-      setErrorMessage(apiError);
+      setErrorMessage(err?.response?.data?.error || err?.message || "Critical failure in fetching Tally data.");
     } finally {
       setLoading(false);
     }
   };
 
-  // ── Sorting ───────────────────────────────────────────────────────────────
   const handleSort = (field) => {
-    setSortState((prev) =>
-      prev.field === field
-        ? { field, dir: prev.dir === "asc" ? "desc" : "asc" }
-        : { field, dir: "asc" },
-    );
+    setSortState((prev) => prev.field === field ? { field, dir: prev.dir === "asc" ? "desc" : "asc" } : { field, dir: "asc" });
     setPage(1);
   };
 
   const sortedData = useMemo(() => {
     if (!sortState.field) return data;
     return [...data].sort((a, b) => {
-      const av = a[sortState.field],
-        bv = b[sortState.field];
-      const an = parseFloat(av),
-        bn = parseFloat(bv);
-      let cmp =
-        !isNaN(an) && !isNaN(bn)
-          ? an - bn
-          : String(av ?? "").localeCompare(String(bv ?? ""));
+      let av = a[sortState.field];
+      let bv = b[sortState.field];
+      const parse = (v) => {
+        if (v === null || v === undefined || v === "—") return -Infinity;
+        const s = String(v).replace(/,/g, "").replace("₹", "").replace(/\(/g, "-").replace(/\)/g, "");
+        const n = parseFloat(s);
+        return isNaN(n) ? String(v).toLowerCase() : n;
+      };
+      const an = parse(av), bn = parse(bv);
+      let cmp = (typeof an === "number" && typeof bn === "number") ? an - bn : String(an).localeCompare(String(bn));
       return sortState.dir === "asc" ? cmp : -cmp;
     });
   }, [data, sortState]);
 
-  // ── Pagination ────────────────────────────────────────────────────────────
   const totalPages = Math.max(1, Math.ceil(sortedData.length / PAGE_SIZE));
   const pagedData = sortedData.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
-  // ── Headers ───────────────────────────────────────────────────────────────
   const tableHeaders = useMemo(() => {
-    if (columnsFromApi.length > 0) return columnsFromApi;
-    if (data.length > 0) return Object.keys(data[0]);
-    if (selectedColumns.length > 0) return selectedColumns;
-    return availableFields;
-  }, [columnsFromApi, data, selectedColumns, availableFields]);
+    if (columnsMeta.length > 0) return columnsMeta.map((m) => m.key);
+    return selectedColumns.length > 0 ? selectedColumns : availableFields;
+  }, [columnsMeta, selectedColumns, availableFields]);
 
-  // ── Filtered available fields ─────────────────────────────────────────────
   const filteredAvailableFields = useMemo(() => {
     const q = fieldSearch.trim().toLowerCase();
-    return q
-      ? availableFields.filter((f) => f.toLowerCase().includes(q))
-      : availableFields;
+    return q ? availableFields.filter((f) => f.toLowerCase().includes(q)) : availableFields;
   }, [availableFields, fieldSearch]);
 
-  // ── Insights ──────────────────────────────────────────────────────────────
-  const insights = useMemo(() => {
-    if (!data.length) return null;
-    let totalAmt = 0,
-      topRow = null;
-    data.forEach((row) => {
-      const amt = getTopAmount(row);
-      totalAmt += amt;
-      if (!topRow || amt > getTopAmount(topRow)) topRow = row;
-    });
-    return {
-      totalAmt,
-      topName: getTopName(topRow),
-      topAmt: getTopAmount(topRow),
-      count: data.length,
-    };
-  }, [data]);
-
-  // ── Exports ───────────────────────────────────────────────────────────────
-  const buildExportRows = () =>
-    sortedData.map((row, i) => {
-      const shaped = { sr_no: i + 1 };
-      tableHeaders.forEach((h) => {
-        let val = row[h] ?? "";
-        if (h === "date") val = fmtDate(val);
-        shaped[h] = val;
-      });
-      return shaped;
-    });
-
   const exportCSV = () => {
-    if (!sortedData.length) return;
-    const ws = XLSX.utils.json_to_sheet(buildExportRows());
+    const ws = XLSX.utils.json_to_sheet(sortedData);
     const csv = XLSX.utils.sheet_to_csv(ws);
     const a = document.createElement("a");
-    a.href = URL.createObjectURL(
-      new Blob([csv], { type: "text/csv;charset=utf-8;" }),
-    );
-    a.download = `${tableName || "Analytics"}.csv`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
+    a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }));
+    a.download = `${tableName}.csv`; a.click();
   };
 
   const exportExcel = () => {
-    if (!sortedData.length) return;
-    const ws = XLSX.utils.json_to_sheet(buildExportRows());
+    const ws = XLSX.utils.json_to_sheet(sortedData);
     const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, tableName || "Analytics");
-    XLSX.writeFile(wb, `${tableName || "Analytics"}.xlsx`);
+    XLSX.utils.book_append_sheet(wb, ws, "Data");
+    XLSX.writeFile(wb, `${tableName}.xlsx`);
   };
-
-  const exportPDF = () => {
-    if (!sortedData.length) return;
-    const doc = new jsPDF();
-    const rows = buildExportRows();
-    const cols = ["sr_no", ...tableHeaders];
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(13);
-    doc.text(
-      `${tableName || "Analytics Report"} — ${dataset.replace("_", " ").toUpperCase()}`,
-      14,
-      14,
-    );
-    doc.setFontSize(9);
-    doc.setFont("helvetica", "normal");
-    doc.setTextColor(120, 120, 120);
-    doc.text(
-      `Generated: ${new Date().toLocaleString("en-IN")}  |  Records: ${rows.length}`,
-      14,
-      21,
-    );
-    doc.autoTable({
-      head: [cols.map((k) => k.toUpperCase().replaceAll("_", " "))],
-      body: rows.map((row) => cols.map((k) => row[k] ?? "")),
-      startY: 26,
-      styles: { fontSize: 8, cellPadding: 3 },
-      headStyles: { fillColor: [30, 41, 59], textColor: [148, 163, 184] },
-      alternateRowStyles: { fillColor: [15, 23, 42] },
-    });
-    doc.save(`${tableName || "Analytics"}.pdf`);
-  };
-
-  // ─── Styles ────────────────────────────────────────────────────────────────
 
   const css = `
-    .ap-root * { box-sizing: border-box; }
-    .ap-root {
-      --accent:    #3b82f6;
-      --green:     #10b981;
-      --amber:     #f59e0b;
-      --red:       #ef4444;
-      --purple:    #8b5cf6;
-      --bg-main:   #0d1117;
-      --bg-card:   #161b26;
-      --bg-elevated: #1c2336;
-      --bg-input:  #1a2035;
-      --border:    #252e42;
-      --border-hi: #2e3a52;
-      --text-primary:   #e2e8f0;
-      --text-secondary: #8a92a6;
-      --text-muted:     #4a5568;
-   
-      --shimmer: linear-gradient(90deg, #1c2336 25%, #252e42 50%, #1c2336 75%);
+    .ap-container { display: flex; flex-direction: column; height: calc(100vh - 80px); gap: 16px; animation: fadeIn 0.4s ease-out; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+    .premium-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; box-shadow: var(--shadow); overflow: hidden; }
     
-      color: var(--text-primary);
-      font-size: 13px;
-      display: flex;
-      flex-direction: column;
-      height: 100%;
-      gap: 12px;
-      padding: 16px;
+    /* Top Bar */
+    .ap-top-bar { padding: 12px 20px; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+    .ap-module-title { display: flex; align-items: center; gap: 10px; font-weight: 800; font-size: 16px; letter-spacing: -0.02em; }
+    .ap-tag-live { background: rgba(16,185,129,0.1); color: var(--emerald); font-size: 10px; padding: 2px 8px; border-radius: 20px; border: 1px solid rgba(16,185,129,0.2); text-transform: uppercase; }
+
+    .btn-group { display: flex; gap: 8px; }
+    .btn-action {
+      display: flex; align-items: center; gap: 8px; padding: 8px 16px;
+      border-radius: 10px; font-size: 13px; font-weight: 600; cursor: pointer;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); border: 1px solid var(--border);
+      background: var(--bg-elevated); color: var(--text-secondary);
+    }
+    .btn-action:hover:not(:disabled) { border-color: var(--accent); color: var(--text-primary); transform: translateY(-1px); }
+    .btn-action:disabled { opacity: 0.4; cursor: not-allowed; }
+    
+    .btn-run { background: var(--accent); color: white; border: none; box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3); }
+    .btn-run:hover:not(:disabled) { background: var(--accent-light); box-shadow: 0 6px 16px rgba(99, 102, 241, 0.4); }
+
+    /* Layout */
+    .ap-main-layout { display: flex; gap: 16px; flex: 1; min-height: 0; }
+    
+    /* Side Panel */
+    .ap-side-panel { width: 260px; flex-shrink: 0; display: flex; flex-direction: column; overflow-y: auto; scrollbar-width: none; }
+    .ap-side-panel::-webkit-scrollbar { display: none; }
+    
+    .ap-panel-section { padding: 16px; border-bottom: 1px solid var(--border); }
+    .ap-label { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 10px; display: flex; align-items: center; gap: 8px; }
+    
+    .premium-select {
+      width: 100%; background: rgba(15, 23, 42, 0.4); border: 1px solid var(--border);
+      border-radius: 10px; padding: 10px 12px; color: var(--text-primary);
+      font-size: 13px; appearance: none; outline: none; cursor: pointer;
+      transition: all 0.2s; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+      background-repeat: no-repeat; background-position: right 10px center;
     }
 
-    @keyframes shimmer {
-      0%   { background-position: 200% 0; }
-      100% { background-position: -200% 0; }
-    }
-    @keyframes fadeUp {
-      from { opacity: 0; transform: translateY(6px); }
-      to   { opacity: 1; transform: none; }
-    }
-    @keyframes spin {
-      to { transform: rotate(360deg); }
+    .premium-input {
+      width: 100%; background: rgba(15, 23, 42, 0.4); border: 1px solid var(--border);
+      border-radius: 10px; padding: 10px 12px; color: var(--text-primary);
+      font-size: 13px; outline: none; transition: all 0.2s;
     }
 
-    .ap-card {
-      background: var(--bg-card);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-    }
-
-    /* Header */
-    .ap-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 14px 18px;
-      flex-shrink: 0;
-    }
-    .ap-title {
-      display: flex; align-items: center; gap: 8px;
-      font-family: var(--font-display);
-      font-size: 17px; font-weight: 800;
-      letter-spacing: -0.02em;
-    }
-    .ap-badge {
-      font-size: 10px; font-weight: 700; letter-spacing: 0.08em;
-      text-transform: uppercase;
-      padding: 2px 8px; border-radius: 4px;
-      background: rgba(59,130,246,0.12);
-      color: var(--accent);
-      border: 1px solid rgba(59,130,246,0.2);
-    }
-    .ap-actions { display: flex; gap: 8px; align-items: center; }
-
-    /* Table name row */
-    .ap-tablename {
-      display: flex; align-items: center; gap: 10px;
-      padding: 9px 18px;
-      border-top: 1px solid var(--border);
-      flex-shrink: 0;
-    }
-    .ap-tablename-label {
-      font-size: 10px; font-weight: 700; letter-spacing: 0.1em;
-      text-transform: uppercase; color: var(--text-muted); white-space: nowrap;
-    }
-
-    /* Buttons */
-    .btn {
-      display: inline-flex; align-items: center; gap: 6px;
-      padding: 7px 14px; border-radius: 8px;
-      font-size: 12px; font-weight: 500;
-      cursor: pointer; border: 1px solid;
-      font-family: var(--font-ui);
-      transition: all 0.15s;
-      white-space: nowrap;
-    }
-    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
-    .btn-ghost {
-      background: var(--bg-elevated); border-color: var(--border-hi);
-      color: var(--text-secondary);
-    }
-    .btn-ghost:not(:disabled):hover {
-      border-color: var(--accent); color: var(--accent);
-      background: rgba(59,130,246,0.08);
-    }
-    .btn-primary {
-      background: var(--accent); border-color: var(--accent);
-      color: #fff; font-weight: 600;
-    }
-    .btn-primary:not(:disabled):hover { background: #2563eb; border-color: #2563eb; }
-
-    /* Workspace */
-    .ap-workspace {
-      display: flex; gap: 12px; flex: 1; min-height: 0;
-    }
-
-    /* Left panel */
-    .ap-left {
-      width: 220px; flex-shrink: 0;
-      display: flex; flex-direction: column; gap: 8px;
-      overflow-y: auto; padding-right: 2px;
-    }
-    .ap-left::-webkit-scrollbar { width: 3px; }
-    .ap-left::-webkit-scrollbar-thumb { background: var(--border-hi); border-radius: 2px; }
-
-    .ap-section { padding: 12px; border-bottom: 1px solid var(--border); }
-    .ap-section:last-child { border-bottom: none; }
-    .ap-section-label {
-      font-size: 10px; font-weight: 700; letter-spacing: 0.1em;
-      text-transform: uppercase; color: var(--text-muted);
-      margin-bottom: 7px; display: flex; align-items: center; gap: 5px;
-    }
-
-    .ap-select-wrap { position: relative; }
-    .ap-select {
-      width: 100%; background: var(--bg-input);
-      border: 1px solid var(--border-hi); border-radius: 7px;
-      padding: 7px 26px 7px 10px;
-      color: var(--text-primary); font-size: 12px; font-family: var(--font-ui);
-      appearance: none; outline: none; cursor: pointer;
-      transition: border-color 0.15s;
-    }
-    .ap-select:focus { border-color: var(--accent); }
-    .ap-select-arrow {
-      position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
-      pointer-events: none; color: var(--text-muted);
-    }
-
-    .ap-input {
-      width: 100%; background: var(--bg-input);
-      border: 1px solid var(--border); border-radius: 7px;
-      padding: 7px 10px; color: var(--text-primary);
-      font-size: 12px; font-family: var(--font-ui); outline: none;
-      transition: border-color 0.15s;
-    }
-    .ap-input::placeholder { color: var(--text-muted); }
-    .ap-input:focus { border-color: var(--accent); }
-    .ap-input-mono { font-family: var(--font-mono); font-size: 12px; color: var(--accent); }
-
-    .ap-filter-stack { display: flex; flex-direction: column; gap: 5px; }
-
-    .ap-calc-list { display: flex; flex-direction: column; gap: 6px; }
-    .ap-calc-item {
-      display: flex; align-items: center; gap: 8px;
-      cursor: pointer; font-size: 12px; color: var(--text-secondary);
-      padding: 3px 0; transition: color 0.15s;
-    }
-    .ap-calc-item:hover { color: var(--text-primary); }
-
-    /* Fields search */
-    .ap-fields-search-wrap { position: relative; margin-bottom: 7px; }
-    .ap-fields-search-icon {
-      position: absolute; left: 8px; top: 50%; transform: translateY(-50%);
-      color: var(--text-muted);
-    }
-    .ap-search-input {
-      width: 100%; background: var(--bg-input);
-      border: 1px solid var(--border); border-radius: 7px;
-      padding: 6px 10px 6px 26px;
-      color: var(--text-primary); font-size: 11px; font-family: var(--font-ui);
-      outline: none; transition: border-color 0.15s;
-    }
-    .ap-search-input::placeholder { color: var(--text-muted); }
-    .ap-search-input:focus { border-color: var(--accent); }
-
-    .ap-field-actions { display: flex; gap: 6px; margin-bottom: 7px; }
-    .ap-field-btn {
-      flex: 1; padding: 5px; font-size: 10px; font-weight: 600;
-      border-radius: 5px; cursor: pointer; border: 1px solid;
-      transition: all 0.15s; font-family: var(--font-ui);
-    }
-    .ap-field-btn-all {
-      background: rgba(59,130,246,0.1); border-color: rgba(59,130,246,0.2);
-      color: var(--accent);
-    }
-    .ap-field-btn-all:hover { background: rgba(59,130,246,0.18); }
-    .ap-field-btn-clr {
-      background: var(--bg-elevated); border-color: var(--border-hi);
-      color: var(--text-secondary);
-    }
-    .ap-field-btn-clr:hover { color: var(--red); border-color: rgba(239,68,68,0.3); }
-
-    .ap-field-list { display: flex; flex-direction: column; gap: 4px; padding-bottom: 8px; }
-
-    .ap-field-item {
+    .field-pill-container { display: flex; flex-direction: column; gap: 6px; }
+    .field-pill {
       display: flex; align-items: center; justify-content: space-between;
-      background: var(--bg-elevated); border: 1px solid var(--border);
-      border-radius: 6px; padding: 5px 8px; gap: 6px;
-      transition: border-color 0.15s;
+      padding: 8px 12px; border-radius: 10px; background: rgba(30, 41, 59, 0.3);
+      border: 1px solid var(--border); font-size: 12px; color: var(--text-secondary);
+      transition: all 0.2s; cursor: pointer;
     }
-    .ap-field-item:hover { border-color: var(--border-hi); }
-    .ap-field-item.selected { border-color: rgba(59,130,246,0.3); background: rgba(59,130,246,0.07); }
-    .ap-field-item.dragging { border-color: var(--accent); background: rgba(59,130,246,0.15); }
-    .ap-field-name { font-size: 11px; color: var(--text-secondary); font-family: var(--font-mono); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
-    .ap-add-btn {
-      font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 4px;
-      cursor: pointer; border: 1px solid; transition: all 0.15s; flex-shrink: 0;
-      background: rgba(59,130,246,0.1); color: var(--accent); border-color: rgba(59,130,246,0.2);
-    }
-    .ap-add-btn:hover { background: var(--accent); color: #fff; }
-    .ap-add-btn.added { background: rgba(16,185,129,0.1); color: #34d399; border-color: rgba(16,185,129,0.2); cursor: default; }
+    .field-pill:hover { background: rgba(30, 41, 59, 0.5); border-color: var(--border-hi); color: var(--text-primary); }
+    .field-pill.active { border-color: rgba(99, 102, 241, 0.3); background: rgba(99, 102, 241, 0.08); color: var(--accent-light); }
 
-    /* Middle panel */
-    .ap-mid {
-      width: 220px; flex-shrink: 0;
+    /* Insights Header */
+    .ap-insights-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 4px; }
+    .insight-card {
+      background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px;
+      padding: 16px; display: flex; flex-direction: column; gap: 8px;
     }
-    .ap-mid-inner {
-      height: 100%;
-      display: flex; flex-direction: column;
-      padding: 12px;
-    }
-    .ap-mid-label {
-      font-size: 10px; font-weight: 700; letter-spacing: 0.1em;
-      text-transform: uppercase; color: var(--text-muted);
-      margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between;
-    }
-    .ap-col-count {
-      background: rgba(59,130,246,0.1); color: var(--accent);
-      padding: 2px 7px; border-radius: 10px; font-size: 10px;
-    }
-    .ap-drop-zone {
-      flex: 1; overflow-y: auto; border-radius: 8px;
-      border: 1.5px dashed var(--border-hi);
-      padding: 8px; display: flex; flex-direction: column; gap: 5px;
-      min-height: 0; transition: border-color 0.2s, background 0.2s;
-    }
-    .ap-drop-zone.over {
-      border-color: var(--accent); background: rgba(59,130,246,0.04);
-    }
-    .ap-drop-zone::-webkit-scrollbar { width: 3px; }
-    .ap-drop-zone::-webkit-scrollbar-thumb { background: var(--border-hi); border-radius: 2px; }
-    .ap-col-empty {
-      flex: 1; display: flex; flex-direction: column;
-      align-items: center; justify-content: center;
-      color: var(--text-muted); font-size: 12px; text-align: center;
-      gap: 6px; padding: 20px 10px;
-    }
-    .ap-col-item {
-      display: flex; align-items: center; gap: 6px;
-      background: var(--bg-elevated); border: 1px solid var(--border-hi);
-      border-radius: 6px; padding: 7px 8px; font-size: 12px;
-      color: var(--text-secondary); font-family: var(--font-mono);
-      cursor: grab; transition: background 0.15s; user-select: none;
-    }
-    .ap-col-item:hover { background: var(--bg-card); color: var(--text-primary); }
-    .ap-col-item.dragging-col { opacity: 0.7; border-color: var(--accent); }
-    .ap-col-grip { color: var(--text-muted); flex-shrink: 0; }
-    .ap-col-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .ap-col-remove {
-      color: var(--text-muted); cursor: pointer; flex-shrink: 0;
-      transition: color 0.15s; padding: 2px;
-    }
-    .ap-col-remove:hover { color: var(--red); }
+    .insight-header { display: flex; align-items: center; gap: 10px; }
+    .insight-icon { width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; }
+    .insight-title { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; }
+    .insight-value { font-size: 20px; font-weight: 800; color: var(--text-primary); letter-spacing: -0.01em; }
+    .insight-subtext { font-size: 11px; color: var(--text-muted); font-family: var(--font-mono); }
 
-    /* Right panel */
-    .ap-right {
-      flex: 1; min-width: 0;
-      display: flex; flex-direction: column; gap: 10px;
+    /* Visuals Section */
+    .ap-visuals-row { display: grid; grid-template-columns: 1.5fr 1fr; gap: 16px; margin-bottom: 16px; min-height: 240px; }
+    .chart-box { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+    .chart-title { font-size: 12px; font-weight: 700; color: var(--text-secondary); display: flex; align-items: center; gap: 8px; }
+
+    /* Data Preview */
+    .ap-data-view { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+    .ap-table-scroll { flex: 1; overflow: auto; scrollbar-width: thin; }
+    
+    .premium-table { width: 100%; border-collapse: separate; border-spacing: 0; }
+    .premium-table th {
+      position: sticky; top: 0; z-index: 10;
+      background: var(--bg-card); padding: 12px 16px;
+      text-align: left; font-size: 11px; font-weight: 700;
+      color: var(--text-muted); text-transform: uppercase;
+      letter-spacing: 0.05em; border-bottom: 1px solid var(--border);
+    }
+    .premium-table td {
+      padding: 12px 16px; font-size: 13px; color: var(--text-secondary);
+      border-bottom: 1px solid rgba(148, 163, 184, 0.05);
+      white-space: nowrap; transition: all 0.15s;
+    }
+    .premium-table tr:hover td { background: rgba(99, 102, 241, 0.03); color: var(--text-primary); }
+    
+    .cell-num { font-family: var(--font-mono); font-size: 12px; }
+    .cell-primary { color: var(--text-primary); font-weight: 600; }
+    .cell-amount { font-family: var(--font-mono); font-weight: 700; color: var(--emerald); }
+    .cell-negative { color: var(--rose) !important; }
+    .cell-zero { color: var(--text-muted) !important; opacity: 0.5; }
+    
+    .row-totals td {
+      background: var(--bg-elevated); border-top: 2px solid var(--border);
+      font-weight: 800; color: var(--text-primary); position: sticky; bottom: 0;
     }
 
-    /* KPI row */
-    .ap-kpi-row { display: flex; gap: 10px; flex-shrink: 0; }
-
-    /* Preview area */
-    .ap-preview {
-      flex: 1; min-height: 0;
-      display: flex; flex-direction: column;
-    }
-    .ap-preview-header {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 9px 14px; background: var(--bg-elevated);
-      border-bottom: 1px solid var(--border);
-      flex-shrink: 0; border-radius: 12px 12px 0 0;
-    }
-    .ap-preview-title {
-      font-size: 10px; font-weight: 700; letter-spacing: 0.1em;
-      text-transform: uppercase; color: var(--text-muted);
-    }
-    .ap-preview-tag {
-      font-size: 10px; font-weight: 600; font-family: var(--font-mono);
-      padding: 2px 7px; border-radius: 4px;
-    }
-    .ap-preview-tag.ready   { background: rgba(16,185,129,0.1); color: #34d399; }
-    .ap-preview-tag.loading { background: rgba(245,158,11,0.1);  color: var(--amber); animation: shimmer 1.2s infinite; background-size: 200%; }
-    .ap-preview-tag.empty   { background: var(--bg-elevated); color: var(--text-muted); }
-    .ap-preview-meta { display: flex; align-items: center; gap: 10px; font-size: 11px; color: var(--text-muted); }
-    .ap-preview-meta span { font-family: var(--font-mono); font-size: 10px; }
-    .ap-preview-name { color: var(--accent); }
-    .ap-preview-timing { color: var(--amber); }
-
-    .ap-table-wrap { flex: 1; overflow: auto; min-height: 0; border-radius: 0 0 12px 12px; }
-    .ap-table-wrap::-webkit-scrollbar { width: 4px; height: 4px; }
-    .ap-table-wrap::-webkit-scrollbar-thumb { background: var(--border-hi); border-radius: 2px; }
-
-    .ap-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-    .ap-table td {
-      padding: 9px 14px; border-bottom: 1px solid var(--border);
-      color: var(--text-secondary); vertical-align: middle; white-space: nowrap;
-    }
-    .ap-table tr:last-child td { border-bottom: none; }
-    .ap-table tr:hover td { background: rgba(59,130,246,0.04); }
-    .td-num    { font-family: var(--font-mono); font-size: 11px; color: var(--text-muted); }
-    .td-primary { color: var(--text-primary); font-weight: 500; }
-    .td-amount  { font-family: var(--font-mono); font-weight: 600; color: #34d399; }
-    .td-zero    { font-family: var(--font-mono); color: var(--text-muted); }
-    .td-badge   { display: inline-block; background: rgba(59,130,246,0.1); color: var(--accent); padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 600; font-family: var(--font-mono); }
-    .td-mono    { font-family: var(--font-mono); font-size: 11px; }
-    .td-dash    { color: var(--text-muted); }
-
-    .ap-empty {
-      display: flex; flex-direction: column; align-items: center; justify-content: center;
-      padding: 60px 20px; color: var(--text-muted); gap: 8px; text-align: center;
-    }
-    .ap-empty-icon { opacity: 0.2; }
-    .ap-empty-text { font-size: 13px; color: var(--text-secondary); }
-    .ap-empty-sub  { font-size: 11px; font-family: var(--font-mono); }
-
-    .ap-spinner {
-      width: 14px; height: 14px; border-radius: 50%;
-      border: 2px solid rgba(255,255,255,0.3);
-      border-top-color: #fff;
-      animation: spin 0.7s linear infinite;
-      flex-shrink: 0;
-    }
-
-    /* Pagination */
-    .ap-pagination {
-      display: flex; align-items: center; gap: 8px;
-      padding: 8px 14px; border-top: 1px solid var(--border);
-      flex-shrink: 0; font-size: 11px; color: var(--text-muted);
-    }
-    .ap-page-btn {
-      padding: 3px 10px; border-radius: 5px; cursor: pointer; font-size: 11px;
-      background: var(--bg-elevated); border: 1px solid var(--border-hi);
-      color: var(--text-secondary); transition: all 0.15s;
-    }
-    .ap-page-btn:not(:disabled):hover { border-color: var(--accent); color: var(--accent); }
-    .ap-page-btn:disabled { opacity: 0.3; cursor: not-allowed; }
-    .ap-page-info { font-family: var(--font-mono); }
+    .shimmer { background: linear-gradient(90deg, transparent, rgba(255,255,255,0.03), transparent); background-size: 200% 100%; animation: shimmerLoad 1.5s infinite; }
+    @keyframes shimmerLoad { from { background-position: -200% 0; } to { background-position: 200% 0; } }
   `;
-
-  // ─── Render ────────────────────────────────────────────────────────────────
-
-  const hasData = data.length > 0;
-  const isLoading = loading;
 
   return (
     <>
       <style>{css}</style>
-      <div className="ap-root">
-        {/* ── Header ─────────────────────────────────────────────────────── */}
-        <div className="ap-card" style={{ flexShrink: 0 }}>
-          <div className="ap-header">
-            <div className="ap-title">
-              <Filter size={18} color="var(--accent)" />
-              Dynamic Analytics Module
-              <span className="ap-badge">Live</span>
-            </div>
-            <div className="ap-actions">
-              <button
-                className="btn btn-ghost"
-                onClick={exportCSV}
-                disabled={!hasData}
-              >
-                <FileText size={13} /> CSV
-              </button>
-              <button
-                className="btn btn-ghost"
-                onClick={exportExcel}
-                disabled={!hasData}
-              >
-                <FileSpreadsheet size={13} /> Excel
-              </button>
-              <button
-                className="btn btn-ghost"
-                onClick={exportPDF}
-                disabled={!hasData}
-              >
-                <Download size={13} /> PDF
-              </button>
-              <button
-                className="btn btn-primary"
-                onClick={fetchData}
-                disabled={isLoading}
-              >
-                {isLoading ? (
-                  <span className="ap-spinner" />
-                ) : (
-                  <Play size={13} />
-                )}
-                {isLoading ? "Analyzing…" : "Run Analysis"}
-              </button>
-            </div>
+      <div className="ap-container">
+        {/* Top Navigation */}
+        <div className="premium-card ap-top-bar">
+          <div className="ap-module-title">
+            <LayoutGrid size={20} color="var(--accent)" />
+            TALLY INTELLIGENCE HUB
+            <span className="ap-tag-live">v2.0 PRO</span>
           </div>
-
-          <div className="ap-tablename">
-            <span className="ap-tablename-label">Table Name</span>
-            <input
-              className="ap-input ap-input-mono"
-              style={{ width: 200 }}
-              value={tableName}
-              onChange={(e) => setTableName(e.target.value)}
-              placeholder="e.g. Business_Analytics"
-            />
-            <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
-              Used in CSV / Excel / PDF export file names
-            </span>
+          
+          <div className="btn-group">
+             <button className="btn-action" onClick={() => setShowCharts(!showCharts)} title="Toggle Visuals">
+               {showCharts ? <BarChart2 size={16} /> : <Activity size={16} />}
+               {showCharts ? "HIDE CHARTS" : "SHOW CHARTS"}
+             </button>
+             <button className="btn-action" onClick={exportExcel} disabled={!data.length}><FileSpreadsheet size={16} /> EXCEL</button>
+             <button className="btn-action btn-run" onClick={fetchData} disabled={loading}>
+               {loading ? <RefreshCw size={16} className="spin" /> : <Play size={16} />}
+               {loading ? "PROCESSING..." : "RUN ANALYSIS"}
+             </button>
           </div>
         </div>
 
-        {/* ── Workspace ──────────────────────────────────────────────────── */}
-        <div className="ap-workspace">
-          <DragDropContext onDragEnd={onDragEnd}>
-            {/* ── Left Panel ─────────────────────────────────────────────── */}
-            <div className="ap-card ap-left">
-              {/* Data Source */}
-              <div className="ap-section">
-                <div className="ap-section-label">Data Source</div>
-                <div className="ap-select-wrap">
-                  <select
-                    className="ap-select"
-                    value={dataset}
-                    onChange={(e) => setDataset(e.target.value)}
-                    disabled={configLoading}
-                  >
-                    {DATASET_OPTIONS.map((o) => (
-                      <option key={o.value} value={o.value}>
-                        {o.label}
-                      </option>
-                    ))}
+        <div className="ap-main-layout">
+          {/* Side Control Panel */}
+          <div className="premium-card ap-side-panel">
+            <div className="ap-panel-section">
+              <div className="ap-label"><Database size={14} /> Data Engine</div>
+              <select className="premium-select" value={dataset} onChange={e => setDataset(e.target.value)}>
+                {DATASET_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+              {dataset === "transactions" && (
+                <div style={{ marginTop: 12 }}>
+                  <div className="ap-label">Sub-category</div>
+                  <select className="premium-select" value={transactionType} onChange={e => setTransactionType(e.target.value)}>
+                    {TRANSACTION_TYPES.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
-                  <ChevronDown size={12} className="ap-select-arrow" />
-                </div>
-
-                {dataset === "transactions" && (
-                  <div style={{ marginTop: 7 }}>
-                    <div
-                      className="ap-section-label"
-                      style={{ marginBottom: 5 }}
-                    >
-                      Transaction Type
-                    </div>
-                    <div className="ap-select-wrap">
-                      <select
-                        className="ap-select"
-                        value={transactionType}
-                        onChange={(e) => setTransactionType(e.target.value)}
-                      >
-                        {TRANSACTION_TYPES.map((o) => (
-                          <option key={o.value} value={o.value}>
-                            {o.label}
-                          </option>
-                        ))}
-                      </select>
-                      <ChevronDown size={12} className="ap-select-arrow" />
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Filters */}
-              <div className="ap-section">
-                <div className="ap-section-label">Filters</div>
-                <div className="ap-filter-stack">
-                  <input
-                    className="ap-input"
-                    placeholder="Search…"
-                    value={filters.search}
-                    onChange={(e) =>
-                      setFilters((p) => ({ ...p, search: e.target.value }))
-                    }
-                  />
-                  <input
-                    className="ap-input"
-                    placeholder="Party Name…"
-                    value={filters.party_name}
-                    onChange={(e) =>
-                      setFilters((p) => ({ ...p, party_name: e.target.value }))
-                    }
-                  />
-                  <input
-                    className="ap-input"
-                    placeholder="Item Name…"
-                    value={filters.item_name}
-                    onChange={(e) =>
-                      setFilters((p) => ({ ...p, item_name: e.target.value }))
-                    }
-                  />
-                </div>
-              </div>
-
-              {/* Group By */}
-              <div className="ap-section">
-                <div className="ap-section-label">Group By</div>
-                <div className="ap-select-wrap">
-                  <select
-                    className="ap-select"
-                    value={groupBy}
-                    onChange={(e) => setGroupBy(e.target.value)}
-                  >
-                    <option value="">None</option>
-                    {availableFields.map((f) => (
-                      <option key={f} value={f}>
-                        {f}
-                      </option>
-                    ))}
-                  </select>
-                  <ChevronDown size={12} className="ap-select-arrow" />
-                </div>
-              </div>
-
-              {/* Calculations */}
-              <div className="ap-section">
-                <div className="ap-section-label">Calculations</div>
-                <div className="ap-calc-list">
-                  {CALCULATIONS.map(({ key, label }) => {
-                    const checked = calculations.includes(key);
-                    return (
-                      <label
-                        key={key}
-                        className="ap-calc-item"
-                        onClick={() => toggleCalc(key)}
-                      >
-                        {checked ? (
-                          <CheckSquare size={14} color="var(--accent)" />
-                        ) : (
-                          <Square size={14} color="var(--text-muted)" />
-                        )}
-                        {label}
-                      </label>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Available Fields */}
-              <div
-                className="ap-section"
-                style={{
-                  display: "flex",
-                  flexDirection: "column",
-                }}
-              >
-                <div className="ap-section-label">
-                  Available Fields
-                  {configLoading && (
-                    <RefreshCw
-                      size={10}
-                      style={{ animation: "spin 1s linear infinite" }}
-                    />
-                  )}
-                </div>
-
-                <div className="ap-fields-search-wrap">
-                  <Search size={11} className="ap-fields-search-icon" />
-                  <input
-                    className="ap-search-input"
-                    placeholder="Search fields…"
-                    value={fieldSearch}
-                    onChange={(e) => setFieldSearch(e.target.value)}
-                  />
-                </div>
-
-                <div className="ap-field-actions">
-                  <button
-                    className="ap-field-btn ap-field-btn-all"
-                    onClick={selectAll}
-                  >
-                    Select All
-                  </button>
-                  <button
-                    className="ap-field-btn ap-field-btn-clr"
-                    onClick={clearAll}
-                  >
-                    Clear
-                  </button>
-                </div>
-
-                <Droppable droppableId="availableFields" isDropDisabled={true}>
-                  {(provided) => (
-                    <div
-                      className="ap-field-list"
-                      ref={provided.innerRef}
-                      {...provided.droppableProps}
-                    >
-                      {filteredAvailableFields.map((field, index) => {
-                        const isSelected = selectedColumns.includes(field);
-                        return (
-                          <Draggable
-                            key={`af-${field}`}
-                            draggableId={`af-${field}`}
-                            index={index}
-                          >
-                            {(provided, snapshot) => (
-                              <div
-                                ref={provided.innerRef}
-                                {...provided.draggableProps}
-                                {...provided.dragHandleProps}
-                                className={`ap-field-item${isSelected ? " selected" : ""}${snapshot.isDragging ? " dragging" : ""}`}
-                                style={provided.draggableProps.style}
-                              >
-                                <GripVertical
-                                  size={11}
-                                  style={{
-                                    color: "var(--text-muted)",
-                                    flexShrink: 0,
-                                  }}
-                                />
-                                <span className="ap-field-name">{field}</span>
-                                <button
-                                  className={`ap-add-btn${isSelected ? " added" : ""}`}
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    addColumn(field);
-                                  }}
-                                  disabled={isSelected}
-                                >
-                                  {isSelected ? "✓" : "+ Add"}
-                                </button>
-                              </div>
-                            )}
-                          </Draggable>
-                        );
-                      })}
-                      {provided.placeholder}
-                      {filteredAvailableFields.length === 0 && (
-                        <div
-                          style={{
-                            padding: "16px 0",
-                            textAlign: "center",
-                            fontSize: 11,
-                            color: "var(--text-muted)",
-                          }}
-                        >
-                          No fields match "{fieldSearch}"
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </Droppable>
-              </div>
-            </div>
-
-            {/* ── Middle Panel — Selected Columns ────────────────────────── */}
-            <div className="ap-card ap-mid">
-              <div className="ap-mid-inner">
-                <div className="ap-mid-label">
-                  Selected Columns
-                  <span className="ap-col-count">{selectedColumns.length}</span>
-                </div>
-
-                <Droppable droppableId="selectedColumns">
-                  {(provided, snapshot) => (
-                    <div
-                      ref={provided.innerRef}
-                      {...provided.droppableProps}
-                      className={`ap-drop-zone${snapshot.isDraggingOver ? " over" : ""}`}
-                    >
-                      {selectedColumns.length === 0 ? (
-                        <div className="ap-col-empty">
-                          <BarChart2 size={24} style={{ opacity: 0.3 }} />
-                          <span>Drag fields here or click Add</span>
-                          <span
-                            style={{
-                              fontSize: 10,
-                              fontFamily: "var(--font-mono)",
-                            }}
-                          >
-                            columns define the table output
-                          </span>
-                        </div>
-                      ) : (
-                        selectedColumns.map((col, index) => (
-                          <Draggable
-                            key={`col-${col}`}
-                            draggableId={`col-${col}`}
-                            index={index}
-                          >
-                            {(provided, snapshot) => (
-                              <div
-                                ref={provided.innerRef}
-                                {...provided.draggableProps}
-                                {...provided.dragHandleProps}
-                                className={`ap-col-item${snapshot.isDragging ? " dragging-col" : ""}`}
-                                style={provided.draggableProps.style}
-                              >
-                                <GripVertical
-                                  size={12}
-                                  className="ap-col-grip"
-                                />
-                                <span className="ap-col-name">{col}</span>
-                                <span
-                                  className="ap-col-remove"
-                                  onClick={() => removeColumn(col)}
-                                >
-                                  <Trash2 size={11} />
-                                </span>
-                              </div>
-                            )}
-                          </Draggable>
-                        ))
-                      )}
-                      {provided.placeholder}
-                    </div>
-                  )}
-                </Droppable>
-              </div>
-            </div>
-          </DragDropContext>
-
-          {/* ── Right Panel ─────────────────────────────────────────────── */}
-          <div className="ap-right">
-
-
-            {/* Error Banner */}
-            {errorMessage && (
-              <ErrorBanner
-                message={errorMessage}
-                onRetry={hasData ? undefined : fetchData}
-                onDismiss={() => setErrorMessage("")}
-              />
-            )}
-
-            {/* Preview Table */}
-            <div className="ap-card ap-preview">
-              <div className="ap-preview-header">
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <span className="ap-preview-title">Preview</span>
-                  <span
-                    className={`ap-preview-tag ${isLoading ? "loading" : hasData ? "ready" : "empty"}`}
-                  >
-                    {isLoading
-                      ? "analyzing…"
-                      : hasData
-                        ? `${data.length} record${data.length !== 1 ? "s" : ""}`
-                        : "no data"}
-                  </span>
-                </div>
-                <div className="ap-preview-meta">
-                  <span className="ap-preview-name">
-                    {tableName || "Analytics Report"}
-                  </span>
-                  <span>·</span>
-                  <span>
-                    {DATASET_OPTIONS.find((o) => o.value === dataset)?.label}
-                  </span>
-                  {dataset === "transactions" && (
-                    <>
-                      <span>·</span>
-                      <span>{transactionType}</span>
-                    </>
-                  )}
-                  {groupBy && (
-                    <>
-                      <span>·</span>
-                      <span>grouped by {groupBy}</span>
-                    </>
-                  )}
-                  {fetchTime !== null && hasData && (
-                    <>
-                      <span>·</span>
-                      <span className="ap-preview-timing">{fetchTime}ms</span>
-                    </>
-                  )}
-                  {lastRun && (
-                    <>
-                      <span>·</span>
-                      <span>{lastRun.toLocaleTimeString("en-IN")}</span>
-                    </>
-                  )}
-                </div>
-              </div>
-
-              <div className="ap-table-wrap">
-                {isLoading ? (
-                  <div className="ap-empty">
-                    <RefreshCw
-                      size={28}
-                      className="ap-empty-icon"
-                      style={{
-                        animation: "spin 1s linear infinite",
-                        opacity: 0.5,
-                      }}
-                    />
-                    <span className="ap-empty-text">Running analysis…</span>
-                    <span className="ap-empty-sub">
-                      Fetching from Tally ERP via FastAPI
-                    </span>
-                  </div>
-                ) : !hasData ? (
-                  <div className="ap-empty">
-                    <BarChart2 size={32} className="ap-empty-icon" />
-                    <span className="ap-empty-text">
-                      {selectedColumns.length === 0
-                        ? "Add columns and click Run Analysis"
-                        : "Click Run Analysis to load data"}
-                    </span>
-                    <span className="ap-empty-sub">
-                      {selectedColumns.length} column
-                      {selectedColumns.length !== 1 ? "s" : ""} selected
-                    </span>
-                  </div>
-                ) : (
-                  <table className="ap-table">
-                    <thead>
-                      <tr>
-                        <th
-                          style={{
-                            padding: "10px 14px",
-                            textAlign: "left",
-                            width: 52,
-                            fontSize: 10,
-                            fontWeight: 700,
-                            letterSpacing: "0.08em",
-                            textTransform: "uppercase",
-                            color: "var(--text-muted)",
-                            background: "var(--bg-elevated)",
-                            borderBottom: "1px solid var(--border)",
-                            whiteSpace: "nowrap",
-                            position: "sticky",
-                            top: 0,
-                            zIndex: 1,
-                          }}
-                        >
-                          SR NO
-                        </th>
-                        {tableHeaders.map((h) => (
-                          <SortableHeader
-                            key={h}
-                            field={h}
-                            label={h.toUpperCase().replaceAll("_", " ")}
-                            sortState={sortState}
-                            onSort={handleSort}
-                          />
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {pagedData.map((row, idx) => (
-                        <tr key={idx}>
-                          <td className="td-num">
-                            {(page - 1) * PAGE_SIZE + idx + 1}
-                          </td>
-                          {tableHeaders.map((h) => {
-                            const v = row[h];
-                            const isEmpty =
-                              v === null || v === undefined || v === "";
-                            if (isEmpty)
-                              return (
-                                <td key={h} className="td-dash">
-                                  —
-                                </td>
-                              );
-
-                            if (
-                              h === "ledger_name" ||
-                              h === "party_name" ||
-                              h === "item_name"
-                            )
-                              return (
-                                <td key={h} className="td-primary">
-                                  {v}
-                                </td>
-                              );
-
-                            if (h === "parent")
-                              return (
-                                <td key={h}>
-                                  <span className="td-badge">{v}</span>
-                                </td>
-                              );
-
-                            if (isAmountField(h)) {
-                              const n = parseFloat(v);
-                              if (!isNaN(n) && n === 0)
-                                return (
-                                  <td key={h} className="td-zero">
-                                    ₹0
-                                  </td>
-                                );
-                              if (!isNaN(n))
-                                return (
-                                  <td key={h} className="td-amount">
-                                    {fmtINR(n)}
-                                  </td>
-                                );
-                            }
-
-                            if (h === "gst" || h === "phone")
-                              return (
-                                <td key={h} className="td-mono">
-                                  {v}
-                                </td>
-                              );
-
-                            if (h === "date")
-                              return (
-                                <td
-                                  key={h}
-                                  className="td-mono"
-                                  style={{ color: "var(--text-secondary)" }}
-                                >
-                                  {fmtDate(v)}
-                                </td>
-                              );
-
-                            return <td key={h}>{fmt(v)}</td>;
-                          })}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </div>
-
-              {/* Pagination */}
-              {hasData && totalPages > 1 && (
-                <div className="ap-pagination">
-                  <button
-                    className="ap-page-btn"
-                    onClick={() => setPage((p) => Math.max(1, p - 1))}
-                    disabled={page === 1}
-                  >
-                    ← Prev
-                  </button>
-                  <span className="ap-page-info">
-                    Page {page} / {totalPages}
-                  </span>
-                  <button
-                    className="ap-page-btn"
-                    onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                    disabled={page === totalPages}
-                  >
-                    Next →
-                  </button>
-                  <span
-                    style={{
-                      marginLeft: "auto",
-                      fontSize: 10,
-                      fontFamily: "var(--font-mono)",
-                    }}
-                  >
-                    Showing {(page - 1) * PAGE_SIZE + 1}–
-                    {Math.min(page * PAGE_SIZE, data.length)} of {data.length}
-                  </span>
                 </div>
               )}
+            </div>
+
+            <div className="ap-panel-section">
+              <div className="ap-label"><Filter size={14} /> Intelligence Filters</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                <div className="field-search-box">
+                   <Search size={14} style={{ position: 'absolute', left: 10, top: 12, color: 'var(--text-muted)' }} />
+                   <input className="premium-input" style={{ paddingLeft: 34 }} placeholder="Search records..." value={filters.search} onChange={e => setFilters(p => ({...p, search: e.target.value}))} />
+                </div>
+                <input className="premium-input" placeholder="Filter by Name..." value={filters.party_name} onChange={e => setFilters(p => ({...p, party_name: e.target.value}))} />
+              </div>
+            </div>
+
+            <div className="ap-panel-section" style={{ flex: 1, borderBottom: 'none' }}>
+              <div className="ap-label"><Zap size={14} /> Field Inventory</div>
+              <div className="field-pill-container">
+                {filteredAvailableFields.map(f => {
+                   const isSelected = selectedColumns.includes(f);
+                   return (
+                     <div key={f} className={`field-pill ${isSelected ? 'active' : ''}`} onClick={() => !isSelected && addColumn(f)}>
+                       <span>{f}</span>
+                       {!isSelected && <span style={{ color: 'var(--accent)' }}>+</span>}
+                     </div>
+                   );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* Right Main Content */}
+          <div className="ap-data-view">
+            {/* Summary Insights */}
+            {data.length > 0 && (
+              <div className="ap-insights-grid">
+                <InsightCard title="Total Volume" value={totals.amount || totals.value || "0.00"} icon={TrendingUp} color="16, 185, 129" subtext={`${data.length} Transactions`} />
+                <InsightCard title="Top Contributor" value={distributionData[0]?.name || "N/A"} icon={Box} color="99, 102, 241" subtext={`Value: ₹${distributionData[0]?.value?.toLocaleString()}`} />
+                <InsightCard title="Avg Transaction" value={(parseFloat(String(totals.amount || totals.value || "0").replace(/,/g, "")) / data.length).toLocaleString(undefined, { maximumFractionDigits: 2 })} icon={Activity} color="245, 158, 11" subtext="Calculated from View" />
+                <InsightCard title="System Latency" value={`${fetchTime || 0}ms`} icon={Zap} color="236, 72, 153" subtext="Live Tally Sync" />
+              </div>
+            )}
+
+            {/* Visualizations */}
+            {data.length > 0 && showCharts && (
+              <div className="ap-visuals-row">
+                <div className="premium-card chart-box">
+                  <div className="chart-title"><TrendingUp size={16} color="var(--emerald)" /> Performance Trend</div>
+                  <ResponsiveContainer width="100%" height={180}>
+                    <AreaChart data={chartData}>
+                      <defs>
+                        <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3}/>
+                          <stop offset="95%" stopColor="#6366f1" stopOpacity={0}/>
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
+                      <XAxis dataKey="date" hide />
+                      <Tooltip 
+                        contentStyle={{ background: '#1e293b', border: '1px solid #334155', borderRadius: '8px', fontSize: '12px' }}
+                        itemStyle={{ color: '#fff' }}
+                      />
+                      <Area type="monotone" dataKey="value" stroke="#6366f1" strokeWidth={2} fillOpacity={1} fill="url(#colorValue)" />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="premium-card chart-box">
+                  <div className="chart-title"><PieChartIcon size={16} color="var(--accent)" /> Contribution Mix</div>
+                  <ResponsiveContainer width="100%" height={180}>
+                    <BarChart data={distributionData} layout="vertical">
+                       <XAxis type="number" hide />
+                       <YAxis dataKey="name" type="category" width={80} style={{ fontSize: '10px' }} />
+                       <Tooltip cursor={{ fill: 'rgba(255,255,255,0.02)' }} contentStyle={{ background: '#1e293b', border: 'none', borderRadius: '8px' }} />
+                       <Bar dataKey="value" radius={[0, 4, 4, 0]}>
+                          {distributionData.map((_, i) => <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />)}
+                       </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            )}
+
+            {/* Main Table */}
+            <div className="premium-card" style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+               <div className="ap-data-header">
+                 <div className="ap-label" style={{ margin: 0 }}>Analysis Table</div>
+                 <DragDropContext onDragEnd={onDragEnd}>
+                   <Droppable droppableId="selectedColumns" direction="horizontal">
+                     {(provided) => (
+                       <div ref={provided.innerRef} {...provided.droppableProps} style={{ display: 'flex', gap: 6, overflowX: 'auto', maxWidth: '60%' }}>
+                          {selectedColumns.map((col, idx) => (
+                            <Draggable key={col} draggableId={col} index={idx}>
+                              {(p) => (
+                                <div ref={p.innerRef} {...p.draggableProps} {...p.dragHandleProps} className="stat-badge" style={{ display: 'flex', alignItems: 'center', gap: 4, cursor: 'grab', background: 'rgba(99,102,241,0.1)', color: 'var(--accent-light)' }}>
+                                  {col} <X size={10} style={{ cursor: 'pointer' }} onClick={() => removeColumn(col)} />
+                                </div>
+                              )}
+                            </Draggable>
+                          ))}
+                          {provided.placeholder}
+                       </div>
+                     )}
+                   </Droppable>
+                 </DragDropContext>
+               </div>
+
+               <div className="ap-table-scroll">
+                  {!data.length && !loading ? (
+                    <div className="empty-state">
+                      <BarChart2 size={64} style={{ opacity: 0.1 }} />
+                      <div className="empty-state-title">Awaiting Extraction</div>
+                      <div className="empty-state-sub">Connect to Tally ERP and select your parameters to begin analysis.</div>
+                    </div>
+                  ) : (
+                    <table className="premium-table">
+                      <thead>
+                        <tr>
+                          <th>#</th>
+                          {tableHeaders.map(h => (
+                            <SortableHeader key={h} field={h} label={columnsMeta.find(m=>m.key===h)?.label || h} sortState={sortState} onSort={handleSort} />
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {loading ? (
+                          Array.from({ length: 15 }).map((_, i) => (
+                            <tr key={i}>
+                              <td className="shimmer" style={{ height: 40 }} />
+                              {tableHeaders.map(h => <td key={h} className="shimmer" />)}
+                            </tr>
+                          ))
+                        ) : (
+                          pagedData.map((row, idx) => (
+                            <tr key={idx}>
+                              <td className="cell-num">{(page-1)*PAGE_SIZE + idx + 1}</td>
+                              {tableHeaders.map(h => {
+                                const v = row[h];
+                                const meta = columnsMeta.find(m => m.key === h);
+                                const align = meta?.align || "left";
+                                const isNeg = String(v).includes("-") || String(v).includes("(");
+                                const isZero = String(v).replace(/[^\d]/g, "") === "00" || v === "0";
+                                return (
+                                  <td key={h} style={{ textAlign: align }} className={`${h.includes("name") ? 'cell-primary' : 'cell-num'} ${meta?.type === 'currency' ? 'cell-amount' : ''} ${isNeg ? 'cell-negative' : ''} ${isZero ? 'cell-zero' : ''}`}>
+                                    {meta?.type === 'currency' ? `₹${v}` : v}
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          ))
+                        )}
+                        {!loading && Object.keys(totals).length > 0 && (
+                          <tr className="row-totals">
+                            <td>Σ</td>
+                            {tableHeaders.map(h => {
+                              const val = totals[h];
+                              const meta = columnsMeta.find(m => m.key === h);
+                              return <td key={h} style={{ textAlign: 'right' }}>{val !== undefined ? (meta?.type === "currency" ? `₹${val}` : val) : "—"}</td>;
+                            })}
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  )}
+               </div>
+
+               {data.length > PAGE_SIZE && (
+                 <div className="ap-pagination">
+                   <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Showing {pagedData.length} of {data.length} records</span>
+                   <div className="btn-group">
+                     <button className="btn-page" onClick={() => setPage(p => Math.max(1, p-1))} disabled={page===1}>PREVIOUS</button>
+                     <button className="btn-page" onClick={() => setPage(p => Math.min(totalPages, p+1))} disabled={page===totalPages}>NEXT</button>
+                   </div>
+                 </div>
+               )}
             </div>
           </div>
         </div>

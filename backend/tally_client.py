@@ -35,10 +35,13 @@ def tally_val(raw) -> str:
 
 
 def tally_float(raw) -> float:
-    """Extract float from Tally value."""
+    """Extract float from Tally value, handling (123) as negative."""
     s = tally_val(raw).replace(",", "").strip()
     if not s:
         return 0.0
+    # Handle (123.45) as -123.45
+    if s.startswith("(") and s.endswith(")"):
+        s = "-" + s[1:-1].strip()
     try:
         return float(s)
     except (ValueError, TypeError):
